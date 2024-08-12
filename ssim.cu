@@ -203,9 +203,6 @@ __global__ void fusedssimCUDA(
   const int pix_id = pix_y * W + pix_x;
   const int num_pix = H * W;
   const int batch = block.group_index().z;
-  if (batch == 1 && cg::this_grid().thread_rank() == 0) {
-    printf("HIHI\n");
-  }
 
   // shared memory that will be used to load pixels temporarily
   __shared__ float buf1[SY][SSX];
