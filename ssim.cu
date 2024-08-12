@@ -32,16 +32,17 @@ namespace cg = cooperative_groups;
 #define CY (BY + 10)
 
 
-__device__ float get_pix_value(const float* img, const int c, const int y, const int x, const int H, const int W) {
+__device__ float get_pix_value(const float* img, const int b, const int c, const int y, const int x, const int CH, const int H, const int W) {
   if (x >= W || y >= H || x < 0 || y < 0) {
     return 0.0f;
   } else {
-    return img[c * H * W + y * W + x];
+    return img[b * CH * H * W + c * H * W + y * W + x];
   }
 }
 
-__device__ void load_into_shared(float pixels[SY][SSX], float *inp, int H, int W, int i) {
+__device__ void load_into_shared(float pixels[SY][SSX], const float *inp, const int CH, const int H, const int W, const int i) {
   auto block = cg::this_thread_block();
+  const int batch = block.group_index().z;
   const int start_y = block.group_index().y * BY;
   const int start_x = block.group_index().x * BX;
 
@@ -54,7 +55,7 @@ __device__ void load_into_shared(float pixels[SY][SSX], float *inp, int H, int W
       int local_x = tid % SX;
       int y = start_y + local_y;
       int x = start_x + local_x;
-      float one = get_pix_value(inp, i, y - 5, x - 5, H, W);
+      float one = get_pix_value(inp, batch, i, y - 5, x - 5, CH, H, W);
       pixels[local_y][local_x] = one;
     }
   }
@@ -201,6 +202,10 @@ __global__ void fusedssimCUDA(
   const int pix_x = block.group_index().x * BX + block.thread_index().x;
   const int pix_id = pix_y * W + pix_x;
   const int num_pix = H * W;
+  const int batch = block.group_index().z;
+  if (batch == 1 && cg::this_grid().thread_rank() == 0) {
+    printf("HIHI\n");
+  }
 
   // shared memory that will be used to load pixels temporarily
   __shared__ float buf1[SY][SSX];
@@ -209,7 +214,7 @@ __global__ void fusedssimCUDA(
 
   for (int i = 0; i < CH; ++i) {
     // load into shared
-    load_into_shared(buf1, img1, H, W, i);
+    load_into_shared(buf1, img1, CH, H, W, i);
     block.sync();
 
     // calculate mu1
@@ -229,7 +234,7 @@ __global__ void fusedssimCUDA(
     block.sync();
 
     // calculate mu2
-    load_into_shared(buf2, img2, H, W, i);
+    load_into_shared(buf2, img2, CH, H, W, i);
     block.sync();
     flush_conv_scratch(buf3);
     block.sync();
@@ -265,7 +270,7 @@ __global__ void fusedssimCUDA(
     float B = (sigma1_sq + sigma2_sq + C2);
     float m = (C * D) / (A * B);
     if (pix_x < W && pix_y < H) {
-      const int global_idx = i * num_pix + pix_id;
+      const int global_idx = batch * CH * num_pix + i * num_pix + pix_id;
       ssim_map[global_idx] = m;
 
       if (dm_dmu1) {
@@ -302,6 +307,7 @@ __global__ void fusedssim_backwardCUDA(
   const int pix_x = block.group_index().x * BX + block.thread_index().x;
   const int pix_id = pix_y * W + pix_x;
   const int num_pix = H * W;
+  const int batch = block.group_index().z;
 
   // shared memory that will be used to load pixels temporarily
   __shared__ float buf1[SY][SSX];
@@ -311,12 +317,12 @@ __global__ void fusedssim_backwardCUDA(
   for (int i = 0; i < CH; ++i) {
     float dL_dpix = 0.0f;
     float tmp = 0.0f;
-    float pix1 = get_pix_value(img1, i, pix_y, pix_x, H, W);
-    float pix2 = get_pix_value(img2, i, pix_y, pix_x, H, W);
-    load_into_shared(buf1, dL_dmap, H, W, i);
+    float pix1 = get_pix_value(img1, batch, i, pix_y, pix_x, CH, H, W);
+    float pix2 = get_pix_value(img2, batch, i, pix_y, pix_x, CH, H, W);
+    load_into_shared(buf1, dL_dmap, CH, H, W, i);
 
     // gradient from mu1
-    load_into_shared(buf2, dm_dmu1, H, W, i);
+    load_into_shared(buf2, dm_dmu1, CH, H, W, i);
     block.sync();
     multiply_shared_mem(buf2, buf1);
     block.sync();
@@ -329,7 +335,7 @@ __global__ void fusedssim_backwardCUDA(
     dL_dpix += tmp;
 
     // gradient from sigma1_sq
-    load_into_shared(buf2, dm_dsigma1_sq, H, W, i);
+    load_into_shared(buf2, dm_dsigma1_sq, CH, H, W, i);
     block.sync();
     multiply_shared_mem(buf2, buf1);
     block.sync();
@@ -342,7 +348,7 @@ __global__ void fusedssim_backwardCUDA(
     dL_dpix += tmp;
 
     // gradient from sigma12
-    load_into_shared(buf2, dm_dsigma12, H, W, i);
+    load_into_shared(buf2, dm_dsigma12, CH, H, W, i);
     block.sync();
     multiply_shared_mem(buf2, buf1);
     block.sync();
@@ -354,8 +360,10 @@ __global__ void fusedssim_backwardCUDA(
     block.sync();
     dL_dpix += tmp;
 
-    if (pix_x < W && pix_y < H)
-      dL_dimg1[i * num_pix + pix_id] = dL_dpix;
+    if (pix_x < W && pix_y < H) {
+      const int global_idx = batch * CH * num_pix + i * num_pix + pix_id;
+      dL_dimg1[global_idx] = dL_dpix;
+    }
   }
 }
 
@@ -368,10 +376,11 @@ fusedssim(
   bool train
 )
 {
-  int CH = img1.size(0);
-  int H = img1.size(1);
-  int W = img1.size(2);
-  dim3 grid((W + BX - 1) / BX, (H + BY - 1) / BY, 1);
+  int B = img1.size(0);
+  int CH = img1.size(1);
+  int H = img1.size(2);
+  int W = img1.size(3);
+  dim3 grid((W + BX - 1) / BX, (H + BY - 1) / BY, B);
   dim3 block(BX, BY, 1);
 
   torch::Tensor target = torch::zeros_like(img1).contiguous();
@@ -407,13 +416,14 @@ fusedssim_backward(
   torch::Tensor &dm_dsigma12
 )
 {
-  int CH = img1.size(0);
-  int H = img1.size(1);
-  int W = img1.size(2);
+  int B = img1.size(0);
+  int CH = img1.size(1);
+  int H = img1.size(2);
+  int W = img1.size(3);
 
   torch::Tensor dL_dimg1 = torch::zeros_like(img1).contiguous();
 
-  dim3 grid((W + BX - 1) / BX, (H + BY - 1) / BY, 1);
+  dim3 grid((W + BX - 1) / BX, (H + BY - 1) / BY, B);
   dim3 block(BX, BY, 1);
   fusedssim_backwardCUDA<<<grid,block>>>(
     H,

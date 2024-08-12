@@ -53,23 +53,25 @@ def fused_ssim(img1, img2, train=True):
     C1 = 0.01 ** 2
     C2 = 0.03 ** 2
 
-    return FusedSSIMMap.apply(C1, C2, img1, img2, train).mean()
+    map = FusedSSIMMap.apply(C1, C2, img1, img2, train)
+    return map.mean()
 
-pm_ssim = SSIM(data_range=1.0)
 
 if __name__ == "__main__":
     torch.manual_seed(0)
-    H, W = 1920, 1080
+    B, CH, H, W = 5, 5, 1920, 1080
+    pm_ssim = SSIM(data_range=1.0, channel=CH)
+
     for _ in range(100):
         with torch.no_grad():
-            img1_og = nn.Parameter(torch.rand([3, H, W], device="cuda"))
-            img2_og = torch.rand([3, H, W], device="cuda")
+            img1_og = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
+            img2_og = torch.rand([B, CH, H, W], device="cuda")
 
             img1_mine = nn.Parameter(img1_og.clone())
             img2_mine = img2_og.clone()
 
-            img1_pm = nn.Parameter(img1_og.clone().unsqueeze(0))
-            img2_pm = img2_og.clone().unsqueeze(0)
+            img1_pm = nn.Parameter(img1_og.clone())
+            img2_pm = img2_og.clone()
 
         og_ssim_val = ssim(img1_og, img2_og)
         mine_ssim_val = fused_ssim(img1_mine, img2_mine)
@@ -83,12 +85,10 @@ if __name__ == "__main__":
         pm_ssim_val.backward()
 
         assert torch.isclose(img1_og.grad, img1_mine.grad).all()
-        assert torch.isclose(img1_og.grad, img1_pm.grad.squeeze(0)).all()
+        assert torch.isclose(img1_og.grad, img1_pm.grad).all()
 
-    img1 = nn.Parameter(torch.rand([3, H, W], device="cuda"))
-    img2 = torch.rand([3, H, W], device="cuda")
-    img1_pm = img1.unsqueeze(0)
-    img2_pm = img2.unsqueeze(0)
+    img1 = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
+    img2 = torch.rand([B, CH, H, W], device="cuda")
     iterations = 100
 
     # benchmark og
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     # benchmark pytorch_mssim (pm)
     begin = time.time()
     for _ in range(iterations):
-        pm_ssim_val = pm_ssim(img1_pm, img2_pm)
+        pm_ssim_val = pm_ssim(img1, img2)
     torch.cuda.synchronize()
     end = time.time()
     pm_time_forward = (end - begin) / iterations * 1000
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
     begin = time.time()
     for _ in range(iterations):
-        pm_ssim_val = pm_ssim(img1_pm, img2_pm)
+        pm_ssim_val = pm_ssim(img1, img2)
         pm_ssim_val.backward()
     torch.cuda.synchronize()
     end = time.time()
