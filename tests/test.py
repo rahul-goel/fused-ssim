@@ -56,7 +56,7 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
 
 if __name__ == "__main__":
     torch.manual_seed(0)
-    B, CH, H, W = 5, 5, 1920, 1080
+    B, CH, H, W = 5, 5, 1080, 1920
     pm_ssim = SSIM(data_range=1.0, channel=CH)
     iterations = 100
 
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     pm_time_forward = (end - begin) / iterations * 1000
-    print("pytorch_ssim Time (Forward):", pm_time_forward, "ms")
+    print("pytorch_mssim Time (Forward):", pm_time_forward, "ms")
 
     begin = time.time()
     for _ in range(iterations):
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     pm_time_backward = (end - begin) / iterations * 1000 - pm_time_forward
-    print("pytorch_ssim Time (Backward):", pm_time_backward, "ms")
+    print("pytorch_mssim Time (Backward):", pm_time_backward, "ms")
 
 
     # benchmark mine
