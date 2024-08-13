@@ -38,6 +38,7 @@ with torch.no_grad():
 - Currently, only one of the images is allowed to be differentiable i.e. only the first image can be `nn.Parameter`.
 - Limited to 2D images.
 - Images must be normalized to range `[0, 1]`.
+- Standard `11x11` convolutions supported.
 
 ## Performance
 This implementation is 5-6x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim). The speed-up increases with increase in number of pixels to process.
