@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 from math import exp
-from fused_ssim import FusedSSIMMap
+from fused_ssim import fused_ssim
 from pytorch_msssim import SSIM
 import time
 
@@ -49,47 +49,45 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
-def fused_ssim(img1, img2, train=True):
-    C1 = 0.01 ** 2
-    C2 = 0.03 ** 2
-
-    map = FusedSSIMMap.apply(C1, C2, img1, img2, train)
-    return map.mean()
-
 
 if __name__ == "__main__":
     torch.manual_seed(0)
     B, CH, H, W = 5, 5, 1920, 1080
     pm_ssim = SSIM(data_range=1.0, channel=CH)
+    iterations = 100
 
-    for _ in range(100):
+    for _ in range(iterations):
         with torch.no_grad():
             img1_og = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
             img2_og = torch.rand([B, CH, H, W], device="cuda")
 
-            img1_mine = nn.Parameter(img1_og.clone())
-            img2_mine = img2_og.clone()
+            img1_mine_same = nn.Parameter(img1_og.clone())
+            img2_mine_same = img2_og.clone()
+
+            img1_mine_valid = nn.Parameter(img1_og.clone())
+            img2_mine_valid = img2_og.clone()
 
             img1_pm = nn.Parameter(img1_og.clone())
             img2_pm = img2_og.clone()
 
         og_ssim_val = ssim(img1_og, img2_og)
-        mine_ssim_val = fused_ssim(img1_mine, img2_mine)
+        mine_ssim_val_same = fused_ssim(img1_mine_same, img2_mine_same)
+        mine_ssim_val_valid = fused_ssim(img1_mine_valid, img2_mine_valid, "valid")
         pm_ssim_val = pm_ssim(img1_pm, img2_pm)
 
-        assert torch.isclose(og_ssim_val, mine_ssim_val)
-        assert torch.isclose(og_ssim_val, pm_ssim_val)
+        assert torch.isclose(og_ssim_val, mine_ssim_val_same)
+        assert torch.isclose(mine_ssim_val_valid, pm_ssim_val)
 
         og_ssim_val.backward()
-        mine_ssim_val.backward()
+        mine_ssim_val_same.backward()
+        mine_ssim_val_valid.backward()
         pm_ssim_val.backward()
 
-        assert torch.isclose(img1_og.grad, img1_mine.grad).all()
-        assert torch.isclose(img1_og.grad, img1_pm.grad).all()
+        assert torch.isclose(img1_og.grad, img1_mine_same.grad).all()
+        assert torch.isclose(img1_mine_valid.grad, img1_pm.grad).all()
 
     img1 = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
     img2 = torch.rand([B, CH, H, W], device="cuda")
-    iterations = 100
 
     # benchmark og
     begin = time.time()
@@ -148,7 +146,7 @@ if __name__ == "__main__":
 
     begin = time.time()
     for _ in range(iterations):
-        mine_ssim_val = fused_ssim(img1, img2, False)
+        mine_ssim_val = fused_ssim(img1, img2, train=False)
     torch.cuda.synchronize()
     end = time.time()
     mine_time_infer = (end - begin) / iterations * 1000
