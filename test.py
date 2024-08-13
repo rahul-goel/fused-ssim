@@ -7,6 +7,10 @@ from fused_ssim import fused_ssim
 from pytorch_msssim import SSIM
 import time
 
+# Reference Implementation is taken from the following:
+# https://github.com/Po-Hsun-Su/pytorch-ssim/blob/master/pytorch_ssim/__init__.py
+# https://github.com/graphdeco-inria/gaussian-splatting/blob/main/utils/loss_utils.py
+
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
     return gauss / gauss.sum()
@@ -96,7 +100,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     og_time_forward = (end - begin) / iterations * 1000
-    print("OG Time (Forward):", og_time_forward, "ms")
+    print("Reference Time (Forward):", og_time_forward, "ms")
 
     begin = time.time()
     for _ in range(iterations):
@@ -105,7 +109,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     og_time_backward = (end - begin) / iterations * 1000 - og_time_forward
-    print("OG Time (Backward):", og_time_backward, "ms")
+    print("Reference Time (Backward):", og_time_backward, "ms")
 
     # benchmark pytorch_mssim (pm)
     begin = time.time()
@@ -114,7 +118,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     pm_time_forward = (end - begin) / iterations * 1000
-    print("pm Time (Forward):", pm_time_forward, "ms")
+    print("pytorch_ssim Time (Forward):", pm_time_forward, "ms")
 
     begin = time.time()
     for _ in range(iterations):
@@ -123,7 +127,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     pm_time_backward = (end - begin) / iterations * 1000 - pm_time_forward
-    print("pm Time (Backward):", pm_time_backward, "ms")
+    print("pytorch_ssim Time (Backward):", pm_time_backward, "ms")
 
 
     # benchmark mine
@@ -133,7 +137,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     mine_time_forward = (end - begin) / iterations * 1000
-    print("Mine Time (Forward):", mine_time_forward, "ms")
+    print("fused-ssim Time (Forward):", mine_time_forward, "ms")
 
     begin = time.time()
     for _ in range(iterations):
@@ -142,7 +146,7 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     mine_time_backward = (end - begin) / iterations * 1000 - mine_time_forward
-    print("Mine Time (Backward):", mine_time_backward, "ms")
+    print("fused-ssim Time (Backward):", mine_time_backward, "ms")
 
     begin = time.time()
     for _ in range(iterations):
@@ -150,4 +154,4 @@ if __name__ == "__main__":
     torch.cuda.synchronize()
     end = time.time()
     mine_time_infer = (end - begin) / iterations * 1000
-    print("Mine Time (Inference):", mine_time_infer, "ms")
+    print("fused-ssim Time (Inference):", mine_time_infer, "ms")
