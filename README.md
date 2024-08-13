@@ -39,5 +39,10 @@ with torch.no_grad():
 - Limited to 2D images.
 - Images must be normalized to range `[0, 1]`.
 
+## Performance
+This implementation is 5-6x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim). The speed-up increases with increase in number of pixels to process.
+
+<img src="./images/training_time.png" width="45%"> <img src="./images/inference_time.png" width="45%">
+
 ## Acknowledgements
 Thanks to [Bernhard](https://snosixtyboo.github.io) for the idea.
