@@ -9,7 +9,7 @@ As per the original SSIM paper, this implementation uses `11x11` sized convoluti
 
 ## PyTorch Installation Instructions
 - You must have CUDA and PyTorch+CUDA installed in you Python 3.X environment. This project has currently been tested with PyTorch `2.3.1+cu118` and CUDA `11.8`.
-- Clone the repository and run `pip install .` from the root of this project.
+- Run `pip install git+https://github.com/rahul-goel/fused-ssim/` or clone the repository and run `pip install .` from the root of this project.
 
 ## Usage
 ```python
