@@ -8,7 +8,7 @@ This repository contains an efficient fully-fused implementation of [SSIM](https
 As per the original SSIM paper, this implementation uses `11x11` sized convolution kernel. The weights for it have been hardcoded and this is another reason for it's speed. This implementation currently only supports **2D images** but with **variable number of channels** and **batch size**.
 
 ## PyTorch Installation Instructions
-- You must have CUDA and PyTorch+CUDA installed in you Python 3.X environment. This project has currently been tested with PyTorch `2.3.1+cu118` and CUDA `11.8`.
+- You must have CUDA and PyTorch+CUDA installed in you Python 3.X environment. This project has currently been tested with PyTorch `2.3.1+cu118` and CUDA `11.8` on Ubuntu 24.04 LTS.
 - Run `pip install git+https://github.com/rahul-goel/fused-ssim/` or clone the repository and run `pip install .` from the root of this project.
 
 ## Usage
