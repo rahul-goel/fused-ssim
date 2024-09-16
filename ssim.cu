@@ -374,6 +374,7 @@ fusedssim(
   bool train
 )
 {
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(img1));
   int B = img1.size(0);
   int CH = img1.size(1);
   int H = img1.size(2);
@@ -414,6 +415,7 @@ fusedssim_backward(
   torch::Tensor &dm_dsigma12
 )
 {
+  const at::cuda::OptionalCUDAGuard device_guard(device_of(img1));
   int B = img1.size(0);
   int CH = img1.size(1);
   int H = img1.size(2);
