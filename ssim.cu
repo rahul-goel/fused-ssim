@@ -2,6 +2,7 @@
 #include <cooperative_groups.h>
 #include <algorithm>
 #include <iostream>
+#include <c10/cuda/CUDAGuard.h>
 
 namespace cg = cooperative_groups;
 
