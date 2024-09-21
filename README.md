@@ -45,5 +45,20 @@ This implementation is 5-8x faster than the previous fastest (to the best of my 
 
 <img src="./images/training_time.png" width="45%"> <img src="./images/inference_time.png" width="45%">
 
+## BibTeX
+If you leverage fused SSIM for your research work, please cite our main paper:
+```
+@inproceedings{taming3dgs,
+    author={{Mallick and Goel} and Kerbl, Bernhard and
+              Vicente Carrasco, Francisco and Steinberger, Markus and De La
+              Torre, Fernando},
+    title={Taming 3DGS: High-Quality Radiance Fields with Limited Resources},
+    booktitle = {SIGGRAPH Asia 2024 Conference Papers},
+    year={2024},
+    doi = {10.1145/3680528.3687694},
+    url = {https://humansensinglab.github.io/taming-3dgs/}
+}
+```
+
 ## Acknowledgements
 Thanks to [Bernhard](https://snosixtyboo.github.io) for the idea.
