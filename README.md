@@ -51,14 +51,13 @@ This implementation is 5-8x faster than the previous fastest (to the best of my 
 If you leverage fused SSIM for your research work, please cite our main paper:
 ```
 @inproceedings{taming3dgs,
-    author={{Mallick and Goel} and Kerbl, Bernhard and
-              Vicente Carrasco, Francisco and Steinberger, Markus and De La
-              Torre, Fernando},
-    title={Taming 3DGS: High-Quality Radiance Fields with Limited Resources},
-    booktitle = {SIGGRAPH Asia 2024 Conference Papers},
-    year={2024},
+    author = {Mallick, Saswat Subhajyoti and Goel, Rahul and Kerbl, Bernhard and Steinberger, Markus and Carrasco, Francisco Vicente and De La Torre, Fernando},
+    title = {Taming 3DGS: High-Quality Radiance Fields with Limited Resources},
+    year = {2024},
+    url = {https://doi.org/10.1145/3680528.3687694},
     doi = {10.1145/3680528.3687694},
-    url = {https://humansensinglab.github.io/taming-3dgs/}
+    booktitle = {SIGGRAPH Asia 2024 Conference Papers},
+    series = {SA '24}
 }
 ```
 
