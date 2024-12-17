@@ -129,7 +129,7 @@ __device__ void do_separable_conv_x(float pixels[SY][SSX], float opt[CY][CCX], i
     val += G_09 * pixels[local_y][local_x + 4];
     val += G_10 * pixels[local_y][local_x + 5];
   }
-  opt[local_y][local_x] = val;
+  opt[local_y][local_x - 5] = val;
 
   val = 0.0f;
   local_y = block.thread_index().y + BY;
@@ -159,14 +159,14 @@ __device__ void do_separable_conv_x(float pixels[SY][SSX], float opt[CY][CCX], i
       val += G_09 * pixels[local_y][local_x + 4];
       val += G_10 * pixels[local_y][local_x + 5];
     }
-    opt[local_y][local_x] = val;
+    opt[local_y][local_x - 5] = val;
   }
 }
 
 __device__ float do_separable_conv_y(float pixels[CY][CCX], int H, int W, bool sq = false) {
   auto block = cg::this_thread_block();
   int local_y = block.thread_index().y + 5;
-  int local_x = block.thread_index().x + 5;
+  int local_x = block.thread_index().x;
   float val = 0.0f;
 
   val += G_00 * pixels[local_y - 5][local_x];
