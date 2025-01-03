@@ -13,6 +13,7 @@ As per the original SSIM paper, this implementation uses `11x11` sized convoluti
   - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
   - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
 - Run `pip install git+https://github.com/rahul-goel/fused-ssim/` or clone the repository and run `pip install .` from the root of this project.
+- If the previous command does not work, run `python setup.py install` from the root of this project.
 
 ## Usage
 ```python
