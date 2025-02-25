@@ -48,10 +48,17 @@ with torch.no_grad():
 This implementation is 5-8x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim).
 
 <img src="./images/training_time.png" width="45%"> <img src="./images/inference_time.png" width="45%">
+<img src="./images/training_time_4090.png" width="45%"> <img src="./images/inference_time_4090.png" width="45%">
 
 ## BibTeX
 If you leverage fused SSIM for your research work, please cite our main paper:
 ```
+@inproceedings{optimized-fused-ssim,
+    author = {Janusch Patas},
+    title = {Optimized Fused-SSIM},
+    year = {2025},
+    url = {https://github.com/MrNeRF/optimized-fused-ssim},
+}
 @inproceedings{taming3dgs,
     author = {Mallick, Saswat Subhajyoti and Goel, Rahul and Kerbl, Bernhard and Steinberger, Markus and Carrasco, Francisco Vicente and De La Torre, Fernando},
     title = {Taming 3DGS: High-Quality Radiance Fields with Limited Resources},
