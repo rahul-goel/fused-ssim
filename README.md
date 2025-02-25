@@ -13,6 +13,7 @@ As per the original SSIM paper, this implementation uses `11x11` sized convoluti
   - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
   - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
 - Run `pip install git+https://github.com/rahul-goel/fused-ssim/` or clone the repository and run `pip install .` from the root of this project.
+- setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v` or clone the repository and run `pip install . -v` from the root of this project.
 - If the previous command does not work, run `python setup.py install` from the root of this project.
 
 ## Usage
@@ -53,12 +54,6 @@ This implementation is 5-8x faster than the previous fastest (to the best of my 
 ## BibTeX
 If you leverage fused SSIM for your research work, please cite our main paper:
 ```
-@inproceedings{optimized-fused-ssim,
-    author = {Janusch Patas},
-    title = {Optimized Fused-SSIM},
-    year = {2025},
-    url = {https://github.com/MrNeRF/optimized-fused-ssim},
-}
 @inproceedings{taming3dgs,
     author = {Mallick, Saswat Subhajyoti and Goel, Rahul and Kerbl, Bernhard and Steinberger, Markus and Carrasco, Francisco Vicente and De La Torre, Fernando},
     title = {Taming 3DGS: High-Quality Radiance Fields with Limited Resources},
@@ -67,6 +62,12 @@ If you leverage fused SSIM for your research work, please cite our main paper:
     doi = {10.1145/3680528.3687694},
     booktitle = {SIGGRAPH Asia 2024 Conference Papers},
     series = {SA '24}
+}
+@inproceedings{optimized-fused-ssim,
+    author = {Janusch Patas},
+    title = {Optimized Fused-SSIM},
+    year = {2025},
+    url = {https://github.com/MrNeRF/optimized-fused-ssim},
 }
 ```
 
