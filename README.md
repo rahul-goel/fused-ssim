@@ -4,6 +4,8 @@ This repository contains an efficient fully-fused implementation of [SSIM](https
 - Convolutions in SSIM are spatially localized leading to fully-fused implementation without touching global memory for intermediate steps.
 - Backpropagation through Gaussian Convolution is simply another Gaussian Convolution itself.
 - Gaussian Convolutions are separable leading to reduced computation.
+- Gaussians are symmetric in nature leading to fewer computations.
+- Single convolution pass for multiple statistics.
 
 As per the original SSIM paper, this implementation uses `11x11` sized convolution kernel. The weights for it have been hardcoded and this is another reason for it's speed. This implementation currently only supports **2D images** but with **variable number of channels** and **batch size**.
 
@@ -13,6 +15,7 @@ As per the original SSIM paper, this implementation uses `11x11` sized convoluti
   - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
   - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
 - Run `pip install git+https://github.com/rahul-goel/fused-ssim/` or clone the repository and run `pip install .` from the root of this project.
+- setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v` or clone the repository and run `pip install . -v` from the root of this project.
 - If the previous command does not work, run `python setup.py install` from the root of this project.
 
 ## Usage
@@ -47,7 +50,7 @@ with torch.no_grad():
 ## Performance
 This implementation is 5-8x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim).
 
-<img src="./images/training_time.png" width="45%"> <img src="./images/inference_time.png" width="45%">
+<img src="./images/training_time_4090.png" width="45%"> <img src="./images/inference_time_4090.png" width="45%">
 
 ## BibTeX
 If you leverage fused SSIM for your research work, please cite our main paper:
@@ -65,3 +68,5 @@ If you leverage fused SSIM for your research work, please cite our main paper:
 
 ## Acknowledgements
 Thanks to [Bernhard](https://snosixtyboo.github.io) for the idea.
+Thanks to [Janusch](https://github.com/MrNeRF) for further optimizations.
+Thanks to [Florian](https://fhahlbohm.github.io/) and [Ishaan](https://ishaanshah.xyz) for testing.

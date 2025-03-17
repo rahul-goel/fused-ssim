@@ -37,5 +37,6 @@ def fused_ssim(img1, img2, padding="same", train=True):
 
     assert padding in allowed_padding
 
+    img1 = img1.contiguous()
     map = FusedSSIMMap.apply(C1, C2, img1, img2, padding, train)
     return map.mean()
