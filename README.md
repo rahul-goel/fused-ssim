@@ -4,6 +4,8 @@ This repository contains an efficient fully-fused implementation of [SSIM](https
 - Convolutions in SSIM are spatially localized leading to fully-fused implementation without touching global memory for intermediate steps.
 - Backpropagation through Gaussian Convolution is simply another Gaussian Convolution itself.
 - Gaussian Convolutions are separable leading to reduced computation.
+- Gaussians are symmetric in nature leading to fewer computations.
+- Single convolution pass for multiple statistics.
 
 As per the original SSIM paper, this implementation uses `11x11` sized convolution kernel. The weights for it have been hardcoded and this is another reason for it's speed. This implementation currently only supports **2D images** but with **variable number of channels** and **batch size**.
 
@@ -48,7 +50,6 @@ with torch.no_grad():
 ## Performance
 This implementation is 5-8x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim).
 
-<img src="./images/training_time.png" width="45%"> <img src="./images/inference_time.png" width="45%">
 <img src="./images/training_time_4090.png" width="45%"> <img src="./images/inference_time_4090.png" width="45%">
 
 ## BibTeX
@@ -63,13 +64,9 @@ If you leverage fused SSIM for your research work, please cite our main paper:
     booktitle = {SIGGRAPH Asia 2024 Conference Papers},
     series = {SA '24}
 }
-@inproceedings{optimized-fused-ssim,
-    author = {Janusch Patas},
-    title = {Optimized Fused-SSIM},
-    year = {2025},
-    url = {https://github.com/MrNeRF/optimized-fused-ssim},
-}
 ```
 
 ## Acknowledgements
 Thanks to [Bernhard](https://snosixtyboo.github.io) for the idea.
+Thanks to [Janusch](https://github.com/MrNeRF) for further optimizations.
+Thanks to [Florian](https://fhahlbohm.github.io/) and [Ishaan](https://ishaanshah.xyz) for testing.
