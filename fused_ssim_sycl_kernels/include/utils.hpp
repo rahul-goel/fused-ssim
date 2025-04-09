@@ -1,5 +1,7 @@
 #ifndef FusedSSIMSycl_utils_HPP
 #define FusedSSIMSycl_utils_HPP
+
+#include <sycl/sycl.hpp>
 // ------------------------------------------
 // Block and Shared Memory Dimensions
 // ------------------------------------------
