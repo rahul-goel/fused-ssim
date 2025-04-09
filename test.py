@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 from math import exp
-from fused_ssim import fused_ssim
+from fused_ssim_sycl.fused_ssim import fused_ssim
 from pytorch_msssim import SSIM
 import time
 

@@ -1,9 +1,8 @@
 from typing import NamedTuple
 import torch.nn as nn
 import torch
-import sys
-sys.path.append("/home/adityasi/fused-ssim/build/fused_ssim_sycl_kernels")
-from fused_ssim_sycl_kernels import fusedssim_forward, fusedssim_backward
+
+from fused_ssim_sycl.kernels_torch import fusedssim_forward, fusedssim_backward
 
 allowed_padding = ["same", "valid"]
 

@@ -1,8 +1,6 @@
 #include "bindings.hpp"
 
-namespace nb = nanobind;
-
 NB_MODULE(fused_ssim_sycl_kernels , m) {
-    m.def("fusedssim_forward", &fusedssim_forward);
-    m.def("fusedssim_backward", &fusedssim_backward);
+    m.def("fusedssim_forward_kernel_call", &fusedssim_forward_kernel_call);
+    m.def("fusedssim_backward_kernel_call", &fusedssim_backward_kernel_call);
 }

@@ -2,8 +2,6 @@
 #include "kernels/FusedSSIMBackwardKernel.hpp"
 
 #include <c10/xpu/XPUStream.h>
-#include <torch/torch.h>
-#include <torch/extension.h>
 
 // ------------------------------------------
 // PyTorch Interface (Backward)
@@ -11,23 +9,22 @@
 //   the partial derivatives from forward;
 //   returns dL/d(img1).
 // ------------------------------------------
-torch::Tensor
+nb::ndarray<float>
 fusedssim_backward_kernel_call(
+    int B,
+    int CH,
+    int H,
+    int W,
     float C1,
     float C2,
-    torch::Tensor &img1,
-    torch::Tensor &img2,
-    torch::Tensor &dL_dmap,
-    torch::Tensor &dm_dmu1,
-    torch::Tensor &dm_dsigma1_sq,
-    torch::Tensor &dm_dsigma12
+    nb::ndarray<float> &img1,
+    nb::ndarray<float> &img2,
+    nb::ndarray<float> &dL_dmap,
+    nb::ndarray<float> &dm_dmu1,
+    nb::ndarray<float> &dm_dsigma1_sq,
+    nb::ndarray<float> &dm_dsigma12,
+    nb::ndarray<float> &dL_dimg1
 ) {
-    int B  = img1.size(0);
-    int CH = img1.size(1);
-    int H  = img1.size(2);
-    int W  = img1.size(3);
-
-    auto dL_dimg1 = torch::zeros_like(img1);
 
     sycl::range<3> localRange{
         BLOCK_X, 
@@ -57,13 +54,13 @@ fusedssim_backward_kernel_call(
             kernel
             (
                 H, W, CH, C1, C2,
-                img1.contiguous().data_ptr<float>(),
-                img2.contiguous().data_ptr<float>(),
-                dL_dmap.contiguous().data_ptr<float>(),
-                dL_dimg1.data_ptr<float>(),
-                dm_dmu1.contiguous().data_ptr<float>(),
-                dm_dsigma1_sq.contiguous().data_ptr<float>(),
-                dm_dsigma12.contiguous().data_ptr<float>(),
+                img1.data(),
+                img2.data(),
+                dL_dmap.data(),
+                dL_dimg1.data(),
+                dm_dmu1.data(),
+                dm_dsigma1_sq.data(),
+                dm_dsigma12.data(),
                 sData,
                 sScratch
             );
