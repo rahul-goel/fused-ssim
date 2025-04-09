@@ -1,14 +1,16 @@
 from typing import NamedTuple
 import torch.nn as nn
 import torch
-from fused_ssim_cuda import fusedssim, fusedssim_backward
+import sys
+sys.path.append("/home/adityasi/fused-ssim/build/fused_ssim_sycl_kernels")
+from fused_ssim_sycl_kernels import fusedssim_forward, fusedssim_backward
 
 allowed_padding = ["same", "valid"]
 
 class FusedSSIMMap(torch.autograd.Function):
     @staticmethod
     def forward(ctx, C1, C2, img1, img2, padding="same", train=True):
-        ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim(C1, C2, img1, img2, train)
+        ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim_forward(C1, C2, img1, img2, train)
 
         if padding == "valid":
             ssim_map = ssim_map[:, :, 5:-5, 5:-5]

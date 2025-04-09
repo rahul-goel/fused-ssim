@@ -12,7 +12,7 @@
 //   If train=false, derivative Tensors are empty.
 // ------------------------------------------
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
-fusedssim_forward(
+fusedssim_forward_kernel_call(
     float C1,
     float C2,
     torch::Tensor &img1,

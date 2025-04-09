@@ -12,7 +12,7 @@
 //   returns dL/d(img1).
 // ------------------------------------------
 torch::Tensor
-fusedssim_backward(
+fusedssim_backward_kernel_call(
     float C1,
     float C2,
     torch::Tensor &img1,
