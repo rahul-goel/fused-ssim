@@ -16,7 +16,10 @@ def fusedssim_forward(C1, C2, img1, img2, train):
     dm_dsigma1_sq = torch.zeros_like(img1) if train  else torch.empty([0])
     dm_dsigma12 = torch.zeros_like(img1) if train  else torch.empty([0])
 
-    return fusedssim_forward_kernel_call(B,CH,H,W,C1,C2,img1.data.contiguous(), img2.contiguous(),train,ssim_map,dm_dmu1,dm_dsigma1_sq,dm_dsigma12)
+    img1 = img1.detach().contiguous()
+    img2 = img2.detach().contiguous()
+    
+    return fusedssim_forward_kernel_call(B,CH,H,W,C1,C2,img1, img2,train,ssim_map,dm_dmu1,dm_dsigma1_sq,dm_dsigma12)
 
 def fusedssim_backward(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12):
     B  = img1.shape[0]
@@ -26,4 +29,12 @@ def fusedssim_backward(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_d
 
     dL_dimg1 = torch.zeros_like(img1)
 
-    return fusedssim_backward_kernel_call(B,CH,H,W,C1,C2,img1.contiguous(), img2.contiguous(), dL_dmap.contiguous(), dm_dmu1.contiguous(), dm_dsigma1_sq.contiguous(), dm_dsigma12.contiguous(), dL_dimg1)
+    img1 = img1.contiguous()
+    img2 = img2.contiguous()
+
+    dL_dmap = dL_dmap.contiguous()
+    dm_dmu1 = dm_dmu1.contiguous()
+    dm_dsigma1_sq = dm_dsigma1_sq.contiguous()
+    dm_dsigma12 = dm_dsigma12.contiguous()
+
+    return fusedssim_backward_kernel_call(B,CH,H,W,C1,C2,img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12, dL_dimg1)
