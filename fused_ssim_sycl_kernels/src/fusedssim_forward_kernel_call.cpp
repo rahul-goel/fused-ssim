@@ -2,14 +2,9 @@
 #include "kernels/FusedSSIMForwardKernel.hpp"
 
 #include <c10/xpu/XPUStream.h>
-#include <nanobind/stl/tuple.h>
 
-// ------------------------------------------
-// PyTorch Interface (Forward)
-//   Returns (ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12).
-//   If train=false, derivative Tensors are empty.
-// ------------------------------------------
-std::tuple<nb::ndarray<float>, nb::ndarray<float>, nb::ndarray<float>, nb::ndarray<float>>
+
+void
 fusedssim_forward_kernel_call(
     int B, 
     int CH, 
@@ -67,6 +62,4 @@ fusedssim_forward_kernel_call(
         }
     );
     e.wait();
-
-    return std::make_tuple(ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12);
 }

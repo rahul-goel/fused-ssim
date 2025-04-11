@@ -2,7 +2,7 @@ from typing import NamedTuple
 import torch.nn as nn
 import torch
 
-from fused_ssim_sycl.kernels_torch import fusedssim_forward, fusedssim_backward
+from fused_ssim_sycl.torch_kernel_calls import fusedssim_forward, fusedssim_backward
 
 allowed_padding = ["same", "valid"]
 

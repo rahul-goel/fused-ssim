@@ -9,7 +9,7 @@
 //   the partial derivatives from forward;
 //   returns dL/d(img1).
 // ------------------------------------------
-nb::ndarray<float>
+void
 fusedssim_backward_kernel_call(
     int B,
     int CH,
@@ -68,6 +68,4 @@ fusedssim_backward_kernel_call(
         }
     );
     e.wait();
-
-    return dL_dimg1;
 }

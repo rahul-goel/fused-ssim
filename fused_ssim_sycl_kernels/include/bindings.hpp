@@ -3,12 +3,10 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
-#include <nanobind/stl/tuple.h>
-
 
 namespace nb = nanobind;
 
-std::tuple<nb::ndarray<float>, nb::ndarray<float>, nb::ndarray<float>, nb::ndarray<float>>
+void
 fusedssim_forward_kernel_call(
     int B, 
     int CH, 
@@ -25,7 +23,7 @@ fusedssim_forward_kernel_call(
     nb::ndarray<float> &dm_dsigma12
 );
 
-nb::ndarray<float>
+void
 fusedssim_backward_kernel_call(
     int B,
     int CH,

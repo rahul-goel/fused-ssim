@@ -19,7 +19,9 @@ def fusedssim_forward(C1, C2, img1, img2, train):
     img1 = img1.detach().contiguous()
     img2 = img2.detach().contiguous()
     
-    return fusedssim_forward_kernel_call(B,CH,H,W,C1,C2,img1, img2,train,ssim_map,dm_dmu1,dm_dsigma1_sq,dm_dsigma12)
+    fusedssim_forward_kernel_call(B,CH,H,W,C1,C2,img1, img2,train,ssim_map,dm_dmu1,dm_dsigma1_sq,dm_dsigma12)
+    
+    return ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12
 
 def fusedssim_backward(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12):
     B  = img1.shape[0]
@@ -37,4 +39,6 @@ def fusedssim_backward(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_d
     dm_dsigma1_sq = dm_dsigma1_sq.contiguous()
     dm_dsigma12 = dm_dsigma12.contiguous()
 
-    return fusedssim_backward_kernel_call(B,CH,H,W,C1,C2,img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12, dL_dimg1)
+    fusedssim_backward_kernel_call(B,CH,H,W,C1,C2,img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12, dL_dimg1)
+
+    return dL_dimg1
