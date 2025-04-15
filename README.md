@@ -8,14 +8,22 @@
 
 ### Build
 ```
-mkdir build
-cd build
-cmake ..
-make -j 12
+git clone git@github.com:isl-org/fused-ssim.git
+pip install -e .
+```
+
+**Note**: If you get the following CMake error even if the virtual environment has pytorch
+```
+CMake Error at CMakeLists.txt:48 (message):
+        Could not find Torch via Python introspection.  Please ensure PyTorch is
+        installed or set CMAKE_PREFIX_PATH/Torch_DIR manually.
+``` 
+use the following command
+```
+pip install --no-build-isolation -e .
 ```
 
 ### Test
-Make sure you are at repo root since package is not installed yet.
 ```
 python -m tests.test
 ```
