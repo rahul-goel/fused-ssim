@@ -2,7 +2,7 @@ from typing import NamedTuple
 import torch.nn as nn
 import torch
 
-from fused_ssim_sycl.torch_kernel_calls import fusedssim_forward, fusedssim_backward
+from fusedssim_sycl.torch_kernel_calls import fusedssim_forward, fusedssim_backward
 
 allowed_padding = ["same", "valid"]
 
@@ -32,7 +32,7 @@ class FusedSSIMMap(torch.autograd.Function):
         grad = fusedssim_backward(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
         return None, None, grad, None, None, None
 
-def fused_ssim(img1, img2, padding="same", train=True):
+def fusedssim(img1, img2, padding="same", train=True):
     C1 = 0.01 ** 2
     C2 = 0.03 ** 2
 

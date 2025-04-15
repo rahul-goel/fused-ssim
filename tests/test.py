@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 from math import exp
-from fused_ssim_sycl.fused_ssim import fused_ssim
+from fusedssim_sycl import fusedssim
 from pytorch_msssim import SSIM
 import time
 
@@ -75,8 +75,8 @@ if __name__ == "__main__":
             img2_pm = img2_og.clone()
 
         og_ssim_val = ssim(img1_og, img2_og)
-        mine_ssim_val_same = fused_ssim(img1_mine_same, img2_mine_same)
-        mine_ssim_val_valid = fused_ssim(img1_mine_valid, img2_mine_valid, "valid")
+        mine_ssim_val_same = fusedssim(img1_mine_same, img2_mine_same)
+        mine_ssim_val_valid = fusedssim(img1_mine_valid, img2_mine_valid, "valid")
         pm_ssim_val = pm_ssim(img1_pm, img2_pm)
 
         assert torch.isclose(og_ssim_val, mine_ssim_val_same)
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     # benchmark mine
     begin = time.time()
     for _ in range(iterations):
-        mine_ssim_val = fused_ssim(img1, img2)
+        mine_ssim_val = fusedssim(img1, img2)
     torch.xpu.synchronize()
     end = time.time()
     mine_time_forward = (end - begin) / iterations * 1000
@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     begin = time.time()
     for _ in range(iterations):
-        mine_ssim_val = fused_ssim(img1, img2)
+        mine_ssim_val = fusedssim(img1, img2)
         mine_ssim_val.backward()
     torch.xpu.synchronize()
     end = time.time()
@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
     begin = time.time()
     for _ in range(iterations):
-        mine_ssim_val = fused_ssim(img1, img2, train=False)
+        mine_ssim_val = fusedssim(img1, img2, train=False)
     torch.xpu.synchronize()
     end = time.time()
     mine_time_infer = (end - begin) / iterations * 1000

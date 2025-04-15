@@ -49,4 +49,4 @@ else()
                       "Please ensure PyTorch is installed or set CMAKE_PREFIX_PATH/Torch_DIR manually.")
 endif()
 
-add_subdirectory(fused_ssim_sycl_kernels)
+add_subdirectory(src/fusedssim_sycl/_kernels)
