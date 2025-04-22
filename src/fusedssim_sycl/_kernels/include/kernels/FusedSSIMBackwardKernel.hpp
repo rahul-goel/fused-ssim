@@ -23,8 +23,8 @@ struct FusedSSIMBackwardKernel{
     const float* m_dm_dmu1;
     const float* m_dm_dsigma1_sq;
     const float* m_dm_dsigma12;
-    sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> m_sData;
-    sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> m_sScratch;
+    sycl::local_accessor<float, 3> m_sData;
+    sycl::local_accessor<float, 3> m_sScratch;
 
     FusedSSIMBackwardKernel(
         int H,
@@ -39,8 +39,8 @@ struct FusedSSIMBackwardKernel{
         const float* dm_dmu1,
         const float* dm_dsigma1_sq,
         const float* dm_dsigma12,
-        sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> sData,
-        sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> sScratch
+        sycl::local_accessor<float, 3> sData,
+        sycl::local_accessor<float, 3> sScratch
     ) 
     : 
         m_H(H),

@@ -25,8 +25,8 @@ struct FusedSSIMForwardKernel {
     float* m_dm_dmu1;
     float* m_dm_dsigma1_sq;
     float* m_dm_dsigma12;
-    sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> m_sTile;
-    sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> m_xconv;
+    sycl::local_accessor<float, 3> m_sTile;
+    sycl::local_accessor<float, 3> m_xconv;
 
     FusedSSIMForwardKernel (
         int H,
@@ -40,8 +40,8 @@ struct FusedSSIMForwardKernel {
         float* dm_dmu1,
         float* dm_dsigma1_sq,
         float* dm_dsigma12,
-        sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> sTile,
-        sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> xconv
+        sycl::local_accessor<float, 3> sTile,
+        sycl::local_accessor<float, 3> xconv
     ) :
         m_H(H),
         m_W(W),

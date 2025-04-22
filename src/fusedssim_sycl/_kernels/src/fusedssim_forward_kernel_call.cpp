@@ -40,10 +40,10 @@ fusedssim_forward_kernel_call(
         [&](sycl::handler& cgh)
         {
             sycl::range<3> sTile_range(SHARED_Y, SHARED_X, 2);
-            sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> sTile(sTile_range, cgh); 
+            sycl::local_accessor<float, 3> sTile(sTile_range, cgh); 
 
             sycl::range<3> xconv_range(CONV_Y, CONV_X, 5);
-            sycl::accessor<float, 3, sycl::access::mode::read_write, sycl::target::local> xconv(xconv_range, cgh);
+            sycl::local_accessor<float, 3> xconv(xconv_range, cgh);
             
             FusedSSIMForwardKernel 
             kernel
