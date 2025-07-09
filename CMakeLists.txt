@@ -1,24 +1,20 @@
-cmake_minimum_required(VERSION 3.15...3.27)
+cmake_minimum_required(VERSION 3.23...4.0)  # Need min 3.23 on Windows
+
 set(CMAKE_C_COMPILER icx)
-set(CMAKE_CXX_COMPILER icpx)
+set(CMAKE_CXX_COMPILER icx)
 
-project(gsplat_sycl)
-
-if (CMAKE_VERSION VERSION_LESS 3.18)
-  set(DEV_MODULE Development)
-else()
-  set(DEV_MODULE Development.Module)
-endif()
+project(fused_ssim)
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
-add_compile_options(-fsycl -fsycl-targets=spir64,intel_gpu_acm_g10) 
-add_link_options(-fsycl -fsycl-targets=spir64,intel_gpu_acm_g10)
+if (NOT SYCL_AOT_TARGETS)
+        set (SYCL_AOT_TARGETS "spir64" CACHE STRING "Comma separated list of SYCL targets for ahead of time compilation. See https://github.com/intel/llvm/blob/sycl/sycl/doc/UsersManual.md for a full list.")
+endif()
 
-find_package(Python 3.8 COMPONENTS Interpreter ${DEV_MODULE} REQUIRED)
+find_package(Python 3.8 COMPONENTS Interpreter Development.Module REQUIRED)
 
 find_package(IntelSYCL REQUIRED)
 

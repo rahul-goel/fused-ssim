@@ -4,6 +4,7 @@ requires = [
     "wheel",
     "scikit-build-core>=0.7.0",
     "nanobind>=2.6.0",
+    "ninja; os_name == 'nt'",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -20,3 +21,7 @@ license = { text = "Specify Your License" }
 wheel.packages = ["src/fusedssim_sycl"]
 cmake.source-dir = "."
 build-dir = "build/{wheel_tag}"
+
+[[tool.scikit-build.overrides]]
+if.platform-system = "^win32"
+cmake.args = ["-GNinja"]
