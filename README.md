@@ -2,7 +2,7 @@
 
 ## XPU Installation Instructions
 - You must have pytorch working on XPU installed in you Python 3.X environment. This project has currently been tested with:
-  - pytorch2.6 for xpu on intel A770 
+  - pytorch for xpu on Intel GPUs
   - install `nanobind` for packaging
   - install `pytorch_mssim` for comparison
 
@@ -12,11 +12,22 @@ git clone git@github.com:isl-org/fused-ssim.git
 ```
 #### Build on Linux
 
+* Setup environment for OneAPI:
+```
+source /opt/intel/oneapi/setvars.sh
+```
+The OneAPI version must match the OneAPI version used in your PyTorch XPU. (e.g. both can be 2025.0.*)
+
+* Install:
 ```
 pip install --no-build-isolation .
 ```
-
 The `--no-build-isolation` flag is necessary for fused-ssim to find and link to PyTorch libraries.
+
+Alternately, you can build a wheel for distribution with:
+```
+python -m build --no-isolation --wheel
+```
 
 #### Build on Windows
 * Setup environment with MSBuild tools and OneAPI in the command prompt:
@@ -27,6 +38,9 @@ powershell
 cmd /k "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
 powershell
 ```
+The OneAPI version must match the OneAPI version used in your PyTorch XPU. (e.g. both can be 2025.0.*)
+
+Now install or build a wheel as in the Linux instructions above.
 
 ### Test
 ```
