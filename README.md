@@ -2,26 +2,45 @@
 
 ## XPU Installation Instructions
 - You must have pytorch working on XPU installed in you Python 3.X environment. This project has currently been tested with:
-  - pytorch2.6 for xpu on intel A770 
-  - install nanobing for packaging
-  - install pytorch_mssim for comparison
+  - pytorch for xpu on Intel GPUs
+  - install `nanobind` for packaging
+  - install `pytorch_mssim` for comparison
 
 ### Build
 ```
 git clone git@github.com:isl-org/fused-ssim.git
-pip install -e .
+```
+#### Build on Linux
+
+* Setup environment for OneAPI:
+```
+source /opt/intel/oneapi/setvars.sh
+```
+The OneAPI version must match the OneAPI version used in your PyTorch XPU. (e.g. both can be 2025.0.*)
+
+* Install:
+```
+pip install --no-build-isolation .
+```
+The `--no-build-isolation` flag is necessary for fused-ssim to find and link to PyTorch libraries.
+
+Alternately, you can build a wheel for distribution with:
+```
+python -m build --no-isolation --wheel
 ```
 
-**Note**: If you get the following CMake error even if the virtual environment has pytorch
+#### Build on Windows
+* Setup environment with MSBuild tools and OneAPI in the command prompt:
+
 ```
-CMake Error at CMakeLists.txt:48 (message):
-        Could not find Torch via Python introspection.  Please ensure PyTorch is
-        installed or set CMAKE_PREFIX_PATH/Torch_DIR manually.
-``` 
-use the following command
+cmd /k "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+powershell
+cmd /k "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+powershell
 ```
-pip install --no-build-isolation -e .
-```
+The OneAPI version must match the OneAPI version used in your PyTorch XPU. (e.g. both can be 2025.0.*)
+
+Now install or build a wheel as in the Linux instructions above.
 
 ### Test
 ```

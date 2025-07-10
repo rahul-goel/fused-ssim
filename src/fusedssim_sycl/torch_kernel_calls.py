@@ -1,7 +1,15 @@
 import torch
 import functools
-
+import os
+if os.name == 'nt':
+    import sysconfig
+    _dll1 = os.add_dll_directory(torch.__path__[0] + '/lib')
+    # For sycl runtime
+    _dll2 = os.add_dll_directory(sysconfig.get_paths()['platstdlib'] + '\\..\\Library\\bin')
 from ._kernels import fusedssim_sycl_kernels as _sycl_kernels
+if os.name == 'nt':
+    _dll1.close()
+    _dll2.close()
 
 def detach_if_parameter(variable):
   if isinstance(variable, torch.nn.parameter.Parameter):

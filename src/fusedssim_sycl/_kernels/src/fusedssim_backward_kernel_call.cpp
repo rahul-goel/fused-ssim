@@ -45,7 +45,7 @@ fusedssim_backward_kernel_call(
         [&](sycl::handler& cgh)
         {
             sycl::range<3> sData_range(3, SHARED_Y, SHARED_X);
-            sycl::local_accessor<float, 3> sData(sData_range, cgh); 
+            sycl::local_accessor<float, 3> sData(sData_range, cgh);
 
             sycl::range<3> sScratch_range(CONV_Y, CONV_X, 3);
             sycl::local_accessor<float, 3> sScratch(sScratch_range, cgh);
