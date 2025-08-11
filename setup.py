@@ -32,15 +32,37 @@ def configure_cuda():
         detected_arch = "AMD GPU (ROCm/HIP)"
     else:
         compiler_args["nvcc"].extend(("--maxrregcount=32", "--use_fast_math"))
-        try:
-            device = torch.cuda.current_device()
-            compute_capability = torch.cuda.get_device_capability(device)
-            arch = f"sm_{compute_capability[0]}{compute_capability[1]}"
-            log(f"Detected GPU architecture: {arch}")
-            compiler_args["nvcc"].append(f"-arch={arch}")
-            detected_arch = arch
-        except Exception as e:
-            log(f"Failed to detect GPU architecture: {e}. Falling back to multiple architectures.")
+
+        # Check for CUDA_ARCHITECTURES environment variable first
+        cuda_archs_env = os.environ.get('CUDA_ARCHITECTURES')
+        arch_configured = False
+
+        if cuda_archs_env:
+            try:
+                archs = [arch.strip() for arch in cuda_archs_env.split(',')]
+                log(f"Using CUDA architectures from environment: {archs}")
+                for arch in archs:
+                    compiler_args["nvcc"].append(f"-gencode=arch=compute_{arch},code=sm_{arch}")
+                detected_arch = f"env:{','.join(archs)}"
+                arch_configured = True
+            except Exception as e:
+                log(f"Failed to parse CUDA_ARCHITECTURES environment variable: {e}. Trying device detection.")
+
+        # Try device detection if environment variable not set or failed
+        if not arch_configured:
+            try:
+                device = torch.cuda.current_device()
+                compute_capability = torch.cuda.get_device_capability(device)
+                arch = f"sm_{compute_capability[0]}{compute_capability[1]}"
+                log(f"Detected GPU architecture: {arch}")
+                compiler_args["nvcc"].append(f"-arch={arch}")
+                detected_arch = arch
+                arch_configured = True
+            except Exception as e:
+                log(f"Failed to detect GPU architecture: {e}. Falling back to multiple architectures.")
+
+        # Fallback to multiple architectures if both methods failed
+        if not arch_configured:
             compiler_args["nvcc"].extend(fallback_archs)
             detected_arch = "multiple architectures"
 
