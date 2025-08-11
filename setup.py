@@ -39,7 +39,7 @@ def configure_cuda():
 
         if cuda_archs_env:
             try:
-                archs = [arch.strip() for arch in cuda_archs_env.split(',')]
+                archs = [arch.strip() for arch in cuda_archs_env.split(';')]
                 log(f"Using CUDA architectures from environment: {archs}")
                 for arch in archs:
                     compiler_args["nvcc"].append(f"-gencode=arch=compute_{arch},code=sm_{arch}")
