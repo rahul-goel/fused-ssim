@@ -155,12 +155,23 @@ If the above commands don't work, try:
 python setup.py install
 ```
 
+If you want to specify the GPU architecture manually, like for example to compile a docker image that will run in a different host, you can do so by setting the `CUDA_ARCHITECTURES` environment variable. For example, to set it to `8.9 and 12.0`, run `CUDA_ARCHITECTURES="89;120" pip install git+https://github.com/rahul-goel/fused-ssim/`.
+
 ### Troubleshooting
 
 - **CUDA errors**: Ensure your CUDA Toolkit version matches your PyTorch CUDA version
 - **ROCm errors**: Verify ROCm installation with `rocm-smi` and check PyTorch ROCm compatibility
 - **Metal errors**: Ensure Xcode Command Line Tools are installed and up to date
 - **Intel errors**: Source the Intel oneAPI environment before installation: `source /opt/intel/oneapi/setvars.sh`
+## PyTorch Installation Instructions
+- You must have CUDA and PyTorch+CUDA installed in you Python 3.X environment. This project has currently been tested with:
+  - PyTorch `2.3.1+cu118` and CUDA `11.8` on Ubuntu 24.04 LTS.
+  - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
+  - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
+- Run `pip install git+https://github.com/rahul-goel/fused-ssim/ --no-build-isolation` or clone the repository and run `pip install . --no-build-isolation` from the root of this project.
+- setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v --no-build-isolation` or clone the repository and run `pip install . -v --no-build-isolation` from the root of this project.
+- If you want to specify the GPU architecture manually, like for example to compile a docker image that will run in a different host, you can do so by setting the `CUDA_ARCHITECTURES` environment variable. For example, to set it to `8.9 and 12.0`, run `CUDA_ARCHITECTURES="89;120" pip install git+https://github.com/rahul-goel/fused-ssim/`.
+- If the previous command does not work, run `python setup.py install` from the root of this project.
 
 ## Usage
 ```python
