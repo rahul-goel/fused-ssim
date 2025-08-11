@@ -16,6 +16,7 @@ As per the original SSIM paper, this implementation uses `11x11` sized convoluti
   - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
 - Run `pip install git+https://github.com/rahul-goel/fused-ssim/ --no-build-isolation` or clone the repository and run `pip install . --no-build-isolation` from the root of this project.
 - setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v --no-build-isolation` or clone the repository and run `pip install . -v --no-build-isolation` from the root of this project.
+- If you want to specify the GPU architecture manually, like for example to compile a docker image that will run in a different host, you can do so by setting the `CUDA_ARCHITECTURES` environment variable. For example, to set it to `8.9 and 12.0`, run `CUDA_ARCHITECTURES="89;120" pip install git+https://github.com/rahul-goel/fused-ssim/`.
 - If the previous command does not work, run `python setup.py install` from the root of this project.
 
 ## Usage
