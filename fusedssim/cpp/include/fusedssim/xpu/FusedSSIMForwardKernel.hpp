@@ -2,7 +2,7 @@
 #define FusedSSIMSycl_ForwardKernel_HPP
 
 #include <sycl/sycl.hpp>
-#include "utils.hpp"
+#include "fusedssim/xpu/utils.hpp"
 
 // ------------------------------------------
 // Forward Kernel: Fused SSIM

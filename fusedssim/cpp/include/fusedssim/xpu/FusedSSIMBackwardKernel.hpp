@@ -1,7 +1,7 @@
 #ifndef FusedSSIMSycl_BackwardKernel_HPP
 #define FusedSSIMSycl_BackwardKernel_HPP
 
-#include "utils.hpp"
+#include "fusedssim/xpu/utils.hpp"
 
 // ------------------------------------------
 // Backward Kernel: Apply chain rule to get

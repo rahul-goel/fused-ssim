@@ -1,5 +1,5 @@
 #include <torch/extension.h>
-#include "ssim.h"
+#include "fusedssim/ssim.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("fusedssim", &fusedssim);
