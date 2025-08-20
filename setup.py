@@ -66,6 +66,7 @@ class CMakeBuild(build_ext):
         subprocess.run(["cmake", "--build", "."] + build_args, check=True, cwd=build_dir)
 
 setup(
+    packages=['fusedssim'],  # <--- ADD THIS LINE
     ext_modules=[CMakeExtension("fusedssim._C", sourcedir=".")],
     cmdclass={"build_ext": CMakeBuild},
     zip_safe=False,
