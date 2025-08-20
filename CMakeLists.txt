@@ -62,8 +62,9 @@ elseif(BACKEND STREQUAL "SYCL")
     target_compile_options(_C PRIVATE -fsycl-targets=${SYCL_AOT_TARGETS})
 endif()
 
-target_include_directories(_C fusedssim/cpp/include)
-target_link_libraries(_C PRIVATE ${TORCH_LIBRARIES})
+target_include_directories(_C PRIVATE fusedssim/cpp/include)
+find_library(TORCH_PYTHON_LIBRARY torch_python PATH "${TORCH_INSTALL_PREFIX}/lib")
+target_link_libraries(_C PRIVATE ${TORCH_LIBRARIES} ${TORCH_PYTHON_LIBRARY})
 
 if(BACKEND STREQUAL "SYCL")
     target_link_libraries(_C PRIVATE IntelSYCL::SYCL_CXX)
