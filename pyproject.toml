@@ -1,27 +1,20 @@
+# pyproject.toml
+
 [build-system]
 requires = [
-    "setuptools>=61.0.0",
+    "setuptools>=61.0",
     "wheel",
-    "scikit-build-core>=0.7.0",
-    "nanobind>=2.6.0",
-    "ninja; os_name == 'nt'",
+    "pybind11>=2.10",
+    "torch>=2.0"
 ]
-build-backend = "scikit_build_core.build"
-
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "fusedssim_sycl"
-version = "0.1.0" 
-description = "A Python package with SYCL kernels for SSIM Loss"
+name = "fusedssim"
+version = "0.1.0"
+description = "A fused implementation of SSIM with CUDA and SYCL backends."
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "Specify Your License" }
-
-[tool.scikit-build]
-wheel.packages = ["src/fusedssim_sycl"]
-cmake.source-dir = "."
-build-dir = "build/{wheel_tag}"
-
-[[tool.scikit-build.overrides]]
-if.platform-system = "^win32"
-cmake.args = ["-GNinja"]
+dependencies = [
+    "torch>=2.0"
+]
