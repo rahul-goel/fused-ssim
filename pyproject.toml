@@ -1,0 +1,20 @@
+# pyproject.toml
+
+[build-system]
+requires = [
+    "setuptools>=61.0",
+    "wheel",
+    "pybind11>=2.10",
+    "torch>=2.0"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fusedssim"
+version = "0.1.0"
+description = "A fused implementation of SSIM with CUDA and SYCL backends."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=2.0"
+]

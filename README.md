@@ -1,72 +1,67 @@
 # Fully Fused Differentiable SSIM
 
-This repository contains an efficient fully-fused implementation of [SSIM](https://en.wikipedia.org/wiki/Structural_similarity_index_measure) which is differentiable in nature. There are several factors that contribute to an efficient implementation:
-- Convolutions in SSIM are spatially localized leading to fully-fused implementation without touching global memory for intermediate steps.
-- Backpropagation through Gaussian Convolution is simply another Gaussian Convolution itself.
-- Gaussian Convolutions are separable leading to reduced computation.
-- Gaussians are symmetric in nature leading to fewer computations.
-- Single convolution pass for multiple statistics.
+## XPU Installation Instructions
+- You must have pytorch working on XPU installed in you Python 3.X environment. This project has currently been tested with:
+  - pytorch for xpu on Intel GPUs
+  - install `nanobind` for packaging
+  - install `pytorch_mssim` for comparison
 
-As per the original SSIM paper, this implementation uses `11x11` sized convolution kernel. The weights for it have been hardcoded and this is another reason for it's speed. This implementation currently only supports **2D images** but with **variable number of channels** and **batch size**.
+### Build
+```
+git clone git@github.com:isl-org/fused-ssim.git
+```
+#### Build on Linux
 
-## PyTorch Installation Instructions
-- You must have CUDA and PyTorch+CUDA installed in you Python 3.X environment. This project has currently been tested with:
-  - PyTorch `2.3.1+cu118` and CUDA `11.8` on Ubuntu 24.04 LTS.
-  - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
-  - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
-- Run `pip install git+https://github.com/rahul-goel/fused-ssim/ --no-build-isolation` or clone the repository and run `pip install . --no-build-isolation` from the root of this project.
-- setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v --no-build-isolation` or clone the repository and run `pip install . -v --no-build-isolation` from the root of this project.
-- If the previous command does not work, run `python setup.py install` from the root of this project.
+* Setup environment for OneAPI:
+```
+source /opt/intel/oneapi/setvars.sh
+```
+The OneAPI version must match the OneAPI version used in your PyTorch XPU. (e.g. both can be 2025.0.*)
 
-## Usage
-```python
-import torch
-from fused_ssim import fused_ssim
+* Install:
+```
+pip install --no-build-isolation .
+```
+The `--no-build-isolation` flag is necessary for fused-ssim to find and link to PyTorch libraries.
 
-# predicted_image, gt_image: [BS, CH, H, W]
-# predicted_image is differentiable
-gt_image = torch.rand(2, 3, 1080, 1920)
-predicted_image = torch.nn.Parameter(torch.rand_like(gt_image))
-ssim_value = fused_ssim(predicted_image, gt_image)
+Alternately, you can build a wheel for distribution with:
+```
+python -m build --no-isolation --wheel
 ```
 
-By default, `same` padding is used. To use `valid` padding which is the kind of padding used by [pytorch-mssim](https://github.com/VainF/pytorch-msssim):
-```python
-ssim_value = fused_ssim(predicted_image, gt_image, padding="valid")
+#### Build on Windows
+* Setup environment with MSBuild tools and OneAPI in the command prompt:
+
+```
+cmd /k "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+powershell
+cmd /k "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+powershell
+```
+The OneAPI version must match the OneAPI version used in your PyTorch XPU. (e.g. both can be 2025.0.*)
+
+Now install or build a wheel as in the Linux instructions above.
+
+### Test
+```
+python -m tests.test
 ```
 
-If you don't want to train and use this only for inference, use the following for even faster speed:
-```python
-with torch.no_grad():
-  ssim_value = fused_ssim(predicted_image, gt_image, train=False)
+## Benchmarking
+
+Same script as provided by authors (tests/test.py)
+
+Initial numbers
+```    
+Reference Time (Forward): 79.56446647644043 ms
+Reference Time (Backward): 123.47569227218628 ms
+pytorch_mssim Time (Forward): 89.01119470596313 ms
+pytorch_mssim Time (Backward): 88.22749614715576 ms
+fused-ssim Time (Forward): 21.227867603302002 ms
+fused-ssim Time (Backward): 24.689362049102783 ms
+fused-ssim Time (Inference): 14.284882545471191 ms
 ```
 
-## Constraints
-- Currently, only one of the images is allowed to be differentiable i.e. only the first image can be `nn.Parameter`.
-- Limited to 2D images.
-- Images must be normalized to range `[0, 1]`.
-- Standard `11x11` convolutions supported.
+## TODO
 
-## Performance
-This implementation is 5-8x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim).
-
-<img src="./images/training_time_4090.png" width="45%"> <img src="./images/inference_time_4090.png" width="45%">
-
-## BibTeX
-If you leverage fused SSIM for your research work, please cite our main paper:
-```
-@inproceedings{taming3dgs,
-    author = {Mallick, Saswat Subhajyoti and Goel, Rahul and Kerbl, Bernhard and Steinberger, Markus and Carrasco, Francisco Vicente and De La Torre, Fernando},
-    title = {Taming 3DGS: High-Quality Radiance Fields with Limited Resources},
-    year = {2024},
-    url = {https://doi.org/10.1145/3680528.3687694},
-    doi = {10.1145/3680528.3687694},
-    booktitle = {SIGGRAPH Asia 2024 Conference Papers},
-    series = {SA '24}
-}
-```
-
-## Acknowledgements
-Thanks to [Bernhard](https://snosixtyboo.github.io) for the idea.
-Thanks to [Janusch](https://github.com/MrNeRF) for further optimizations.
-Thanks to [Florian](https://fhahlbohm.github.io/) and [Ishaan](https://ishaanshah.xyz) for testing.
+Add all references and update readme

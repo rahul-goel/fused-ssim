@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 from math import exp
-from fused_ssim import fused_ssim
+from fusedssim import fusedssim
 from pytorch_msssim import SSIM
 import time
 
@@ -25,8 +25,8 @@ def ssim(img1, img2, window_size=11, size_average=True):
     channel = img1.size(-3)
     window = create_window(window_size, channel)
 
-    if img1.is_cuda:
-        window = window.cuda(img1.get_device())
+    if img1.is_xpu:
+        window = window.xpu(img1.get_device())
     window = window.type_as(img1)
 
     return _ssim(img1, img2, window, window_size, channel, size_average)
@@ -62,8 +62,8 @@ if __name__ == "__main__":
 
     for _ in range(iterations):
         with torch.no_grad():
-            img1_og = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
-            img2_og = torch.rand([B, CH, H, W], device="cuda")
+            img1_og = nn.Parameter(torch.rand([B, CH, H, W], device="xpu"))
+            img2_og = torch.rand([B, CH, H, W], device="xpu")
 
             img1_mine_same = nn.Parameter(img1_og.clone())
             img2_mine_same = img2_og.clone()
@@ -75,8 +75,8 @@ if __name__ == "__main__":
             img2_pm = img2_og.clone()
 
         og_ssim_val = ssim(img1_og, img2_og)
-        mine_ssim_val_same = fused_ssim(img1_mine_same, img2_mine_same)
-        mine_ssim_val_valid = fused_ssim(img1_mine_valid, img2_mine_valid, "valid")
+        mine_ssim_val_same = fusedssim(img1_mine_same, img2_mine_same)
+        mine_ssim_val_valid = fusedssim(img1_mine_valid, img2_mine_valid, "valid")
         pm_ssim_val = pm_ssim(img1_pm, img2_pm)
 
         assert torch.isclose(og_ssim_val, mine_ssim_val_same)
@@ -90,14 +90,14 @@ if __name__ == "__main__":
         assert torch.isclose(img1_og.grad, img1_mine_same.grad).all()
         assert torch.isclose(img1_mine_valid.grad, img1_pm.grad).all()
 
-    img1 = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
-    img2 = torch.rand([B, CH, H, W], device="cuda")
+    img1 = nn.Parameter(torch.rand([B, CH, H, W], device="xpu"))
+    img2 = torch.rand([B, CH, H, W], device="xpu")
 
     # benchmark og
     begin = time.time()
     for _ in range(iterations):
         og_ssim_val = ssim(img1, img2)
-    torch.cuda.synchronize()
+    torch.xpu.synchronize()
     end = time.time()
     og_time_forward = (end - begin) / iterations * 1000
     print("Reference Time (Forward):", og_time_forward, "ms")
@@ -106,7 +106,7 @@ if __name__ == "__main__":
     for _ in range(iterations):
         og_ssim_val = ssim(img1, img2)
         og_ssim_val.backward()
-    torch.cuda.synchronize()
+    torch.xpu.synchronize()
     end = time.time()
     og_time_backward = (end - begin) / iterations * 1000 - og_time_forward
     print("Reference Time (Backward):", og_time_backward, "ms")
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     begin = time.time()
     for _ in range(iterations):
         pm_ssim_val = pm_ssim(img1, img2)
-    torch.cuda.synchronize()
+    torch.xpu.synchronize()
     end = time.time()
     pm_time_forward = (end - begin) / iterations * 1000
     print("pytorch_mssim Time (Forward):", pm_time_forward, "ms")
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     for _ in range(iterations):
         pm_ssim_val = pm_ssim(img1, img2)
         pm_ssim_val.backward()
-    torch.cuda.synchronize()
+    torch.xpu.synchronize()
     end = time.time()
     pm_time_backward = (end - begin) / iterations * 1000 - pm_time_forward
     print("pytorch_mssim Time (Backward):", pm_time_backward, "ms")
@@ -133,25 +133,25 @@ if __name__ == "__main__":
     # benchmark mine
     begin = time.time()
     for _ in range(iterations):
-        mine_ssim_val = fused_ssim(img1, img2)
-    torch.cuda.synchronize()
+        mine_ssim_val = fusedssim(img1, img2)
+    torch.xpu.synchronize()
     end = time.time()
     mine_time_forward = (end - begin) / iterations * 1000
     print("fused-ssim Time (Forward):", mine_time_forward, "ms")
 
     begin = time.time()
     for _ in range(iterations):
-        mine_ssim_val = fused_ssim(img1, img2)
+        mine_ssim_val = fusedssim(img1, img2)
         mine_ssim_val.backward()
-    torch.cuda.synchronize()
+    torch.xpu.synchronize()
     end = time.time()
     mine_time_backward = (end - begin) / iterations * 1000 - mine_time_forward
     print("fused-ssim Time (Backward):", mine_time_backward, "ms")
 
     begin = time.time()
     for _ in range(iterations):
-        mine_ssim_val = fused_ssim(img1, img2, train=False)
-    torch.cuda.synchronize()
+        mine_ssim_val = fusedssim(img1, img2, train=False)
+    torch.xpu.synchronize()
     end = time.time()
     mine_time_infer = (end - begin) / iterations * 1000
     print("fused-ssim Time (Inference):", mine_time_infer, "ms")

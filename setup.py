@@ -1,82 +1,73 @@
-from setuptools import setup
-from torch.utils.cpp_extension import CUDAExtension, BuildExtension
-import torch
-import sys
+# setup.py
+
 import os
+import subprocess
+import sys
+from pathlib import Path
+import shutil  
 
-# Force unbuffered output
-os.environ['PYTHONUNBUFFERED'] = '1'
-sys.stderr.reconfigure(line_buffering=True)
+from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 
+has_cuda = False
+try:
+    import torch
+    has_cuda = torch.cuda.is_available()
+except ImportError:
+    pass
 
-# Default fallback architectures
-fallback_archs = [
-    "-gencode=arch=compute_75,code=sm_75",
-    "-gencode=arch=compute_80,code=sm_80",
-    "-gencode=arch=compute_89,code=sm_89",
-]
-
-nvcc_args = [
-    "-O3",
-    "--maxrregcount=32",
-    "--use_fast_math",
-]
-
-detected_arch = None
-
-if torch.cuda.is_available():
+has_xpu = False
+if not has_cuda: 
     try:
-        device = torch.cuda.current_device()
-        compute_capability = torch.cuda.get_device_capability(device)
-        arch = f"sm_{compute_capability[0]}{compute_capability[1]}"
-        
-        # Print to multiple outputs
-        arch_msg = f"Detected GPU architecture: {arch}"
-        print(arch_msg)
-        print(arch_msg, file=sys.stderr, flush=True)
-        
-        nvcc_args.append(f"-arch={arch}")
-        detected_arch = arch
-    except Exception as e:
-        error_msg = f"Failed to detect GPU architecture: {e}. Falling back to multiple architectures."
-        print(error_msg)
-        print(error_msg, file=sys.stderr, flush=True)
-        nvcc_args.extend(fallback_archs)
-else:
-    cuda_msg = "CUDA not available. Falling back to multiple architectures."
-    print(cuda_msg)
-    print(cuda_msg, file=sys.stderr, flush=True)
-    nvcc_args.extend(fallback_archs)
+        import torch
+        has_xpu = torch.xpu.is_available()
+    except (ImportError, AttributeError):
+        pass 
 
-# Create a custom class that prints the architecture information
-class CustomBuildExtension(BuildExtension):
-    def build_extensions(self):
-        arch_info = f"Building with GPU architecture: {detected_arch if detected_arch else 'multiple architectures'}"
-        print("\n" + "="*50)
-        print(arch_info)
-        print("="*50 + "\n")
-        super().build_extensions()
+has_sycl_compiler = False
+if os.system('icpx --version > /dev/null 2>&1') == 0:
+    has_sycl_compiler = True
+elif os.system('dpcpp --version > /dev/null 2>&1') == 0:
+    has_sycl_compiler = True
+
+BUILD_SYCL = has_xpu and has_sycl_compiler
+
+class CMakeExtension(Extension):
+    def __init__(self, name: str, sourcedir: str = "") -> None:
+        super().__init__(name, sources=[])
+        self.sourcedir = os.fspath(Path(sourcedir).resolve())
+
+class CMakeBuild(build_ext):
+    def build_extension(self, ext: CMakeExtension) -> None:
+        ext_fullpath = Path.cwd() / self.get_ext_fullpath(ext.name)
+        extdir = ext_fullpath.parent.resolve()
+
+        cfg = "Debug" if self.debug else "Release"
+        
+        cmake_args = [
+            f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}{os.sep}",
+            f"-DPYTHON_EXECUTABLE={sys.executable}",
+            f"-DCMAKE_BUILD_TYPE={cfg}",
+        ]
+        
+        if BUILD_SYCL:
+            print("--- Found 'icx' compiler, configuring for SYCL/XPU backend. ---")
+            cmake_args.extend([
+                "-D CMAKE_C_COMPILER=icx",
+                "-D CMAKE_CXX_COMPILER=icx",
+            ])
+        
+        build_args = ["--config", cfg]
+
+        build_dir = Path(self.build_temp)
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        subprocess.run(["cmake", ext.sourcedir] + cmake_args, check=True, cwd=build_dir)
+        subprocess.run(["cmake", "--build", "."] + build_args, check=True, cwd=build_dir)
 
 setup(
-    name="fused_ssim",
-    packages=['fused_ssim'],
-    ext_modules=[
-        CUDAExtension(
-            name="fused_ssim_cuda",
-            sources=[
-                "ssim.cu",
-                "ext.cpp"],
-            extra_compile_args={
-                "cxx": ["-O3"],
-                "nvcc": nvcc_args
-            }
-        )
-    ],
-    cmdclass={
-        'build_ext': CustomBuildExtension
-    }
+    packages=['fusedssim'],  # <--- ADD THIS LINE
+    ext_modules=[CMakeExtension("fusedssim._C", sourcedir=".")],
+    cmdclass={"build_ext": CMakeBuild},
+    zip_safe=False,
 )
-
-# Print again at the end of setup.py execution
-final_msg = f"Setup completed. NVCC args: {nvcc_args}"
-print(final_msg)
