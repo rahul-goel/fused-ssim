@@ -307,7 +307,7 @@ __global__ void fusedssim_backwardCUDA(
 
     // Shared memory for the fused data:
     // [0]: dm_dmu1*dL, [1]: dm_dsigma1_sq*dL, [2]: dm_dsigma12*dL
-    __shared__ float sData[3][SHARED_Y][SHARED_X];
+    __shared__ float sData[SHARED_Y][SHARED_X][3];
     __shared__ float sScratch[CONV_Y][CONV_X][3];
 
     for (int c = 0; c < CH; ++c) {
@@ -338,9 +338,9 @@ __global__ void fusedssim_backwardCUDA(
                     float vs1   = get_pix_value(dm_dsigma1_sq,bIdx, c, gy, gx, CH, H, W);
                     float vs12  = get_pix_value(dm_dsigma12,  bIdx, c, gy, gx, CH, H, W);
 
-                    sData[0][row][col] = vmu  * chain;
-                    sData[1][row][col] = vs1  * chain;
-                    sData[2][row][col] = vs12 * chain;
+                    sData[row][col][0] = vmu  * chain;
+                    sData[row][col][1] = vs1  * chain;
+                    sData[row][col][2] = vs12 * chain;
                 }
             }
         }
@@ -359,13 +359,13 @@ __global__ void fusedssim_backwardCUDA(
 #pragma unroll
                     for (int d = 1; d <= HALO; ++d) {
                         float w = cGauss[HALO - d];
-                        float left0  = sData[0][yy][lx - d];
-                        float left1  = sData[1][yy][lx - d];
-                        float left2  = sData[2][yy][lx - d];
+                        float left0  = sData[yy][lx - d][0];
+                        float left1  = sData[yy][lx - d][1];
+                        float left2  = sData[yy][lx - d][2];
 
-                        float right0 = sData[0][yy][lx + d];
-                        float right1 = sData[1][yy][lx + d];
-                        float right2 = sData[2][yy][lx + d];
+                        float right0 = sData[yy][lx + d][0];
+                        float right1 = sData[yy][lx + d][1];
+                        float right2 = sData[yy][lx + d][2];
 
                         accum0 += (left0 + right0) * w;
                         accum1 += (left1 + right1) * w;
@@ -374,9 +374,9 @@ __global__ void fusedssim_backwardCUDA(
                     // center
                     {
                         float wc = cGauss[HALO];
-                        float c0 = sData[0][yy][lx];
-                        float c1 = sData[1][yy][lx];
-                        float c2 = sData[2][yy][lx];
+                        float c0 = sData[yy][lx][0];
+                        float c1 = sData[yy][lx][1];
+                        float c2 = sData[yy][lx][2];
                         accum0 += c0 * wc;
                         accum1 += c1 * wc;
                         accum2 += c2 * wc;
