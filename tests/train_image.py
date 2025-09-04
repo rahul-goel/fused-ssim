@@ -26,4 +26,5 @@ while ssim_value < 0.9999:
 
 pred_image = (pred_image * 255.0).squeeze(0).squeeze(0)
 to_save = pred_image.detach().cpu().numpy().astype(np.uint8)
-Image.fromarray(to_save).save(os.path.join("..", "images", "predicted.jpg"))
+gpu = torch.cuda.get_device_name()
+Image.fromarray(to_save).save(os.path.join("..", "images", f"predicted-{gpu.lower().replace(' ', '-')}.jpg"))

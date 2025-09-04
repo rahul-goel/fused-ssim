@@ -57,7 +57,7 @@ if __name__ == "__main__":
     plt.xlabel("Number of pixels (in millions).")
     plt.ylabel("Time for one training iteration (ms).")
     plt.title(f"Training Benchmark on {gpu}.")
-    plt.savefig(os.path.join("..", "images", "training_time.png"), dpi=300)
+    plt.savefig(os.path.join("..", "images", f"training_time-{gpu.lower().replace(' ', '-')}.png"), dpi=300)
 
     data = {
         "pytorch_mssim": [],
@@ -97,4 +97,4 @@ if __name__ == "__main__":
     plt.xlabel("Number of pixels (in millions).")
     plt.ylabel("Time for one inference iteration (ms).")
     plt.title(f"Inference Benchmark on {gpu}.")
-    plt.savefig(os.path.join("..", "images", "inference_time.png"), dpi=300)
+    plt.savefig(os.path.join("..", "images", f"inference_time-{gpu.lower().replace(' ', '-')}.png"), dpi=300)
