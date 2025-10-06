@@ -4,7 +4,9 @@ import os
 from PIL import Image
 from fused_ssim import fused_ssim
 
-gt_image = torch.tensor(np.array(Image.open(os.path.join("..", "images", "albert.jpg"))), dtype=torch.float32, device="cuda").unsqueeze(0).unsqueeze(0) / 255.0
+fused_ssim_device = "cuda" if torch.cuda.is_available() else "mps" if torch.mps.is_available() else "cpu"
+
+gt_image = torch.tensor(np.array(Image.open(os.path.join("..", "images", "albert.jpg"))), dtype=torch.float32, device=fused_ssim_device).unsqueeze(0).unsqueeze(0) / 255.0
 pred_image = torch.nn.Parameter(torch.rand_like(gt_image))
 
 with torch.no_grad():
@@ -26,4 +28,4 @@ while ssim_value < 0.9999:
 
 pred_image = (pred_image * 255.0).squeeze(0).squeeze(0)
 to_save = pred_image.detach().cpu().numpy().astype(np.uint8)
-Image.fromarray(to_save).save(os.path.join("..", "images", "predicted.jpg"))
+Image.fromarray(to_save).save(os.path.join("..", "images", f"predicted_{fused_ssim_device}.jpg"))
