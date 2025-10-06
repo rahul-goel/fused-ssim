@@ -67,9 +67,7 @@ fusedssim(
         
         // Acquire Metal device and compile shader
         id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
-        if (!dev) {
-            throw std::runtime_error("No Metal device found");
-        }
+        TORCH_CHECK(dev, "No Metal device found");
         
         NSError *err = nil;
         id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:MPS_KERNEL]
@@ -87,7 +85,7 @@ fusedssim(
         }
         
         id<MTLComputePipelineState> pipe = build_pipeline(dev, lib, "fusedssim_forward");
-        if (!pipe) throw std::runtime_error("Failed to create compute pipeline for fusedssim_forward");
+        TORCH_CHECK(pipe,"Failed to create compute pipeline for fusedssim_forward");
         
         // Setup constant buffers
         id<MTLBuffer> buf_C1 = [dev newBufferWithBytes:&C1 length:sizeof(float) options:MTLResourceStorageModeShared];
@@ -172,7 +170,7 @@ fusedssim_backward(
         
         // Acquire Metal device and compile shader
         id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
-        if (!dev) throw std::runtime_error("No Metal device found");
+        TORCH_CHECK(dev,"No Metal device found");
         
         NSError *err = nil;
         id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:MPS_KERNEL]
@@ -181,7 +179,7 @@ fusedssim_backward(
         TORCH_CHECK(lib, "Failed to to create custom kernel library, error: ", err.localizedDescription.UTF8String);
         
         id<MTLComputePipelineState> pipe = build_pipeline(dev, lib, "fusedssim_backward");
-        if (!pipe) throw std::runtime_error("Failed to create pipeline for backward");
+        TORCH_CHECK(pipe,"Failed to create pipeline for backward");
     
         // Setup constant buffers
         id<MTLBuffer> b_C1 = [dev newBufferWithBytes:&C1 length:sizeof(float) options:MTLResourceStorageModeShared];
