@@ -21,6 +21,7 @@ As per the original SSIM paper, this implementation uses `11x11` sized convoluti
 ## PyTorch Installation Instructions
 - You must have PyTorch installed in your Python 3.X environment.
     - If using CUDA, ensure you have a CUDA-enabled PyTorch version installed.
+    - If using Metal (MPS), at least PyTorch-2.5.1 is required.
 - Run `pip install git+https://github.com/rahul-goel/fused-ssim/ --no-build-isolation` or clone the repository and run `pip install . --no-build-isolation` from the root of this project.
 - setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v --no-build-isolation` or clone the repository and run `pip install . -v --no-build-isolation` from the root of this project.
 - If the previous command does not work, run `python setup.py install` from the root of this project.
