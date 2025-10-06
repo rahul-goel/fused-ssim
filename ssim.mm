@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 #include <fstream>
-#include "ssim.h" // your header with declarations
+#include "ssim.h"
 
 const int BLOCK_X = 16;
 const int BLOCK_Y = 16;
@@ -73,16 +73,7 @@ fusedssim(
         id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:MPS_KERNEL]
                                                                   options:nil
                                                                     error:&err];
-        TORCH_CHECK(lib, "Failed to to create custom kernel library, error: ", err.localizedDescription.UTF8String);
-
-        // id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:metal_source.c_str()] options:nil error:&err];
-        if (err || !lib) {
-            std::string msg = "Metal library compile error: ";
-            if (err) {
-                msg += [[err localizedDescription] UTF8String];
-            }
-            throw std::runtime_error(msg);
-        }
+        TORCH_CHECK(lib, "Failed to to create forward pass kernel library, error: ", err.localizedDescription.UTF8String);
         
         id<MTLComputePipelineState> pipe = build_pipeline(dev, lib, "fusedssim_forward");
         TORCH_CHECK(pipe,"Failed to create compute pipeline for fusedssim_forward");
@@ -176,7 +167,7 @@ fusedssim_backward(
         id<MTLLibrary> lib = [dev newLibraryWithSource:[NSString stringWithUTF8String:MPS_KERNEL]
                                                                   options:nil
                                                                     error:&err];
-        TORCH_CHECK(lib, "Failed to to create custom kernel library, error: ", err.localizedDescription.UTF8String);
+        TORCH_CHECK(lib, "Failed to to create backward pass kernel library, error: ", err.localizedDescription.UTF8String);
         
         id<MTLComputePipelineState> pipe = build_pipeline(dev, lib, "fusedssim_backward");
         TORCH_CHECK(pipe,"Failed to create pipeline for backward");
