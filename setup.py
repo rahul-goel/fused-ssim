@@ -20,6 +20,9 @@ detected_arch = None
 
 if torch.cuda.is_available():
     if torch.version.hip:
+        hip_msg = "Detected AMD GPU with ROCm/HIP"
+        print(hip_msg)
+        print(hip_msg, file=sys.stderr, flush=True)
         nvcc_args.append("-ffast-math")
     else:
         nvcc_args.extend(("--maxrregcount=32", "--use_fast_math"))
