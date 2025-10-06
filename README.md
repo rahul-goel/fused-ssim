@@ -9,11 +9,18 @@ This repository contains an efficient fully-fused implementation of [SSIM](https
 
 As per the original SSIM paper, this implementation uses `11x11` sized convolution kernel. The weights for it have been hardcoded and this is another reason for it's speed. This implementation currently only supports **2D images** but with **variable number of channels** and **batch size**.
 
+## Software Compatibility
+- This project has currently been tested with:
+  - CUDA
+    - PyTorch `2.3.1+cu118` and CUDA `11.8` on Ubuntu 24.04 LTS.
+    - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
+    - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
+  - Metal (macOS)
+    - PyTorch `2.5.1` on macOS 15.7.1.
+
 ## PyTorch Installation Instructions
-- You must have CUDA and PyTorch+CUDA installed in you Python 3.X environment. This project has currently been tested with:
-  - PyTorch `2.3.1+cu118` and CUDA `11.8` on Ubuntu 24.04 LTS.
-  - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
-  - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
+- You must have PyTorch installed in your Python 3.X environment.
+    - If using CUDA, ensure you have a CUDA-enabled PyTorch version installed.
 - Run `pip install git+https://github.com/rahul-goel/fused-ssim/ --no-build-isolation` or clone the repository and run `pip install . --no-build-isolation` from the root of this project.
 - setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v --no-build-isolation` or clone the repository and run `pip install . -v --no-build-isolation` from the root of this project.
 - If the previous command does not work, run `python setup.py install` from the root of this project.
@@ -50,7 +57,7 @@ with torch.no_grad():
 ## Performance
 This implementation is 5-8x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim).
 
-<img src="./images/training_time_4090.png" width="45%"> <img src="./images/inference_time_4090.png" width="45%">
+<img src="./images/training_time_4090.png" width="30%"> <img src="./images/inference_time_4090.png" width="30%"> <img src="./images/inference_time_m1_pro.png" width="30%">
 
 ## BibTeX
 If you leverage fused SSIM for your research work, please cite our main paper:
