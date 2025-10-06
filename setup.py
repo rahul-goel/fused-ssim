@@ -90,5 +90,5 @@ setup(
 )
 
 # Print again at the end of setup.py execution
-final_msg = f"Setup completed. NVCC args: {compiler_args["nvcc"]}. CXX args: {compiler_args["cxx"]}. Link args: {link_args}."
+final_msg = "Setup completed. NVCC args: {}. CXX args: {}. Link args: {}.".format(compiler_args["nvcc"],compiler_args["cxx"], link_args)
 print(final_msg)
