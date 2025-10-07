@@ -20,6 +20,10 @@ detected_arch = None
 compiler_args = {"cxx": ["-O3"], "nvcc": ["-O3"]}
 link_args = []
 if torch.cuda.is_available():
+    extension_type = CppExtension
+    extension_file = "ssim.cu"
+    build_name = "fused_ssim_cuda"
+
     if torch.version.hip:
         hip_msg = "Detected AMD GPU with ROCm/HIP"
         print(hip_msg)
