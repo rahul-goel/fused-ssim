@@ -7,6 +7,21 @@ from fused_ssim import fused_ssim
 from pytorch_msssim import SSIM
 import time
 
+# GPU Device Detection and Configuration
+# This script supports multiple GPU backends:
+# - CUDA: For Nvidia GPUs and AMD GPUs (via ROCm)
+# - MPS: For Apple Silicon (M1, M2, M3, etc.)
+# The appropriate device is automatically detected and configured below.
+
+if torch.cuda.is_available():
+    # CUDA backend for Nvidia GPUs and AMD GPUs (with ROCm)
+    fused_ssim_device = "cuda"
+    fused_ssim_module = torch.cuda
+elif torch.mps.is_available():
+    # MPS (Metal Performance Shaders) backend for Apple Silicon
+    fused_ssim_device = "mps"
+    fused_ssim_module = torch.mps
+
 # Reference Implementation is taken from the following:
 # https://github.com/Po-Hsun-Su/pytorch-ssim/blob/master/pytorch_ssim/__init__.py
 # https://github.com/graphdeco-inria/gaussian-splatting/blob/main/utils/loss_utils.py
@@ -25,8 +40,7 @@ def ssim(img1, img2, window_size=11, size_average=True):
     channel = img1.size(-3)
     window = create_window(window_size, channel)
 
-    if img1.is_cuda:
-        window = window.cuda(img1.get_device())
+    window = window.to(fused_ssim_device)
     window = window.type_as(img1)
 
     return _ssim(img1, img2, window, window_size, channel, size_average)
@@ -60,10 +74,11 @@ if __name__ == "__main__":
     pm_ssim = SSIM(data_range=1.0, channel=CH)
     iterations = 100
 
+    # Correctness Tests: Verify fused-ssim matches reference implementations
     for _ in range(iterations):
         with torch.no_grad():
-            img1_og = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
-            img2_og = torch.rand([B, CH, H, W], device="cuda")
+            img1_og = nn.Parameter(torch.rand([B, CH, H, W], device=fused_ssim_device))
+            img2_og = torch.rand([B, CH, H, W], device=fused_ssim_device)
 
             img1_mine_same = nn.Parameter(img1_og.clone())
             img2_mine_same = img2_og.clone()
@@ -90,14 +105,15 @@ if __name__ == "__main__":
         assert torch.isclose(img1_og.grad, img1_mine_same.grad).all()
         assert torch.isclose(img1_mine_valid.grad, img1_pm.grad).all()
 
-    img1 = nn.Parameter(torch.rand([B, CH, H, W], device="cuda"))
-    img2 = torch.rand([B, CH, H, W], device="cuda")
+    # Performance Benchmarks: Compare forward and backward pass timings
+    img1 = nn.Parameter(torch.rand([B, CH, H, W], device=fused_ssim_device))
+    img2 = torch.rand([B, CH, H, W], device=fused_ssim_device)
 
-    # benchmark og
+    # Benchmark reference implementation
     begin = time.time()
     for _ in range(iterations):
         og_ssim_val = ssim(img1, img2)
-    torch.cuda.synchronize()
+    fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
     end = time.time()
     og_time_forward = (end - begin) / iterations * 1000
     print("Reference Time (Forward):", og_time_forward, "ms")
@@ -106,16 +122,16 @@ if __name__ == "__main__":
     for _ in range(iterations):
         og_ssim_val = ssim(img1, img2)
         og_ssim_val.backward()
-    torch.cuda.synchronize()
+    fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
     end = time.time()
     og_time_backward = (end - begin) / iterations * 1000 - og_time_forward
     print("Reference Time (Backward):", og_time_backward, "ms")
 
-    # benchmark pytorch_mssim (pm)
+    # Benchmark pytorch_mssim
     begin = time.time()
     for _ in range(iterations):
         pm_ssim_val = pm_ssim(img1, img2)
-    torch.cuda.synchronize()
+    fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
     end = time.time()
     pm_time_forward = (end - begin) / iterations * 1000
     print("pytorch_mssim Time (Forward):", pm_time_forward, "ms")
@@ -124,17 +140,16 @@ if __name__ == "__main__":
     for _ in range(iterations):
         pm_ssim_val = pm_ssim(img1, img2)
         pm_ssim_val.backward()
-    torch.cuda.synchronize()
+    fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
     end = time.time()
     pm_time_backward = (end - begin) / iterations * 1000 - pm_time_forward
     print("pytorch_mssim Time (Backward):", pm_time_backward, "ms")
 
-
-    # benchmark mine
+    # Benchmark fused-ssim
     begin = time.time()
     for _ in range(iterations):
         mine_ssim_val = fused_ssim(img1, img2)
-    torch.cuda.synchronize()
+    fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
     end = time.time()
     mine_time_forward = (end - begin) / iterations * 1000
     print("fused-ssim Time (Forward):", mine_time_forward, "ms")
@@ -143,7 +158,7 @@ if __name__ == "__main__":
     for _ in range(iterations):
         mine_ssim_val = fused_ssim(img1, img2)
         mine_ssim_val.backward()
-    torch.cuda.synchronize()
+    fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
     end = time.time()
     mine_time_backward = (end - begin) / iterations * 1000 - mine_time_forward
     print("fused-ssim Time (Backward):", mine_time_backward, "ms")
@@ -151,7 +166,7 @@ if __name__ == "__main__":
     begin = time.time()
     for _ in range(iterations):
         mine_ssim_val = fused_ssim(img1, img2, train=False)
-    torch.cuda.synchronize()
+    fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
     end = time.time()
     mine_time_infer = (end - begin) / iterations * 1000
     print("fused-ssim Time (Inference):", mine_time_infer, "ms")
