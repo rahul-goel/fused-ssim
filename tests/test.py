@@ -15,10 +15,12 @@ import time
 
 if torch.cuda.is_available():
     # CUDA backend for Nvidia GPUs and AMD GPUs (with ROCm)
+    gpu = torch.cuda.get_device_name()
     fused_ssim_device = "cuda"
     fused_ssim_module = torch.cuda
 elif torch.mps.is_available():
     # MPS (Metal Performance Shaders) backend for Apple Silicon
+    gpu = "Apple Silicon (MPS)"
     fused_ssim_device = "mps"
     fused_ssim_module = torch.mps
 
