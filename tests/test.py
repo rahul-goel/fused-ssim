@@ -11,6 +11,7 @@ import time
 # This script supports multiple GPU backends:
 # - CUDA: For Nvidia GPUs and AMD GPUs (via ROCm)
 # - MPS: For Apple Silicon (M1, M2, M3, etc.)
+# - XPU: For Intel GPUs (via SYCL/oneAPI)
 # The appropriate device is automatically detected and configured below.
 
 if torch.cuda.is_available():
@@ -23,6 +24,11 @@ elif torch.mps.is_available():
     gpu = "Apple Silicon (MPS)"
     fused_ssim_device = "mps"
     fused_ssim_module = torch.mps
+elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+    # XPU backend for Intel GPUs (via SYCL/oneAPI)
+    gpu = torch.xpu.get_device_name(0)
+    fused_ssim_device = "xpu"
+    fused_ssim_module = torch.xpu
 
 # Reference Implementation is taken from the following:
 # https://github.com/Po-Hsun-Su/pytorch-ssim/blob/master/pytorch_ssim/__init__.py

@@ -6,6 +6,9 @@ if torch.cuda.is_available():
     from fused_ssim_cuda import fusedssim, fusedssim_backward
 elif torch.mps.is_available():
     from fused_ssim_mps import fusedssim, fusedssim_backward
+elif hasattr(torch, 'xpu') and torch.xpu.is_available():
+    from fused_ssim_xpu import fusedssim, fusedssim_backward
+
 
 allowed_padding = ["same", "valid"]
 
