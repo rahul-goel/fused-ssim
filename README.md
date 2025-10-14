@@ -70,15 +70,10 @@ hipcc --version
 
 #### Apple Metal (MPS)
 
-Install PyTorch 2.5.1 or newer (Metal support is built-in on macOS):
+Install PyTorch 2.5.1 with MPS backend.
 
 ```bash
 pip install torch torchvision
-```
-
-Ensure you have Xcode Command Line Tools installed:
-```bash
-xcode-select --install
 ```
 
 #### Intel SYCL
@@ -94,6 +89,45 @@ Verify Intel SYCL compiler is available:
 ```bash
 icpx --version
 ```
+
+<details>
+<summary>Additional Intel XPU Build Instructions</summary>
+
+**Important:** The OneAPI version must match the version used by your PyTorch XPU installation (e.g., both should be 2025.0.*).
+
+**Linux Build:**
+
+Setup the OneAPI environment:
+```bash
+source /opt/intel/oneapi/setvars.sh
+```
+
+Install fused-ssim:
+```bash
+git clone https://github.com/rahul-goel/fused-ssim.git
+cd fused-ssim
+pip install --no-build-isolation .
+```
+
+To build a distributable wheel:
+```bash
+python -m build --no-isolation --wheel
+```
+
+**Windows Build:**
+
+Setup the environment with MSBuild tools and OneAPI:
+```bash
+cmd /k "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+powershell
+cmd /k "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+powershell
+```
+
+Then follow the Linux build instructions above.
+
+**Note:** The `--no-build-isolation` flag is necessary for fused-ssim to find and link to PyTorch libraries.
+</details>
 
 ### Step 2: Install Fused-SSIM
 
