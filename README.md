@@ -216,6 +216,5 @@ Thanks to:
 - [asrathore-ai](https://github.com/asrathore-ai) for adding SYCL kernels.
 - [Anton Smirnov](https://pxl-th.github.io/) for adding AMD GPU enablement.
 - [Jonah J. Newton](https://jonahnewton.com.au/) for Apple MPS kernels.
-- [asrathore-ai](https://github.com/asrathore-ai) for adding SYCL kernels.
 - [Janusch](https://github.com/MrNeRF) for further CUDA optimizations.
 - [Florian](https://fhahlbohm.github.io/) and [Ishaan](https://ishaanshah.xyz) for testing.
