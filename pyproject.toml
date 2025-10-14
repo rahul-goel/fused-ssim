@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "torch"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fused-ssim"
+version = "1.0.0"
+description = "Efficient fully-fused differentiable SSIM implementation"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{name = "Rahul Goel"}]
+dependencies = ["torch>=2.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/rahul-goel/fused-ssim"
+Repository = "https://github.com/rahul-goel/fused-ssim"
+
+[tool.setuptools]
+packages = ["fused_ssim"]
