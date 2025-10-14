@@ -9,22 +9,124 @@ This repository contains an efficient fully-fused implementation of [SSIM](https
 
 As per the original SSIM paper, this implementation uses `11x11` sized convolution kernel. The weights for it have been hardcoded and this is another reason for it's speed. This implementation currently only supports **2D images** but with **variable number of channels** and **batch size**.
 
-## Software Compatibility
-- This project has currently been tested with:
-  - CUDA
-    - PyTorch `2.3.1+cu118` and CUDA `11.8` on Ubuntu 24.04 LTS.
-    - PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS.
-    - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11.
-  - Metal (macOS)
-    - PyTorch `2.5.1` on macOS 15.7.1.
+## Hardware Compatibility
 
-## PyTorch Installation Instructions
-- You must have PyTorch installed in your Python 3.X environment.
-    - If using CUDA, ensure you have a CUDA-enabled PyTorch version installed.
-    - If using Metal (MPS), at least PyTorch-2.5.1 is required.
-- Run `pip install git+https://github.com/rahul-goel/fused-ssim/ --no-build-isolation` or clone the repository and run `pip install . --no-build-isolation` from the root of this project.
-- setup.py should detect your GPU architecture automatically. If you want to see the output, run `pip install git+https://github.com/rahul-goel/fused-ssim/ -v --no-build-isolation` or clone the repository and run `pip install . -v --no-build-isolation` from the root of this project.
-- If the previous command does not work, run `python setup.py install` from the root of this project.
+Thanks to the [contributors](#acknowledgements), this implementation supports the following GPU architectures:
+
+- **NVIDIA GPUs** (CUDA).
+- **AMD GPUs** (ROCm).
+- **Apple Silicon** (Metal Performance Shaders).
+- **Intel GPUs** (SYCL).
+
+## Software Compatibility
+
+This project has been tested with:
+
+### NVIDIA CUDA
+- PyTorch `2.3.1+cu118` and CUDA `11.8` on Ubuntu 24.04 LTS
+- PyTorch `2.4.1+cu124` and CUDA `12.4` on Ubuntu 24.04 LTS
+- PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11
+
+### Apple Metal (macOS)
+- PyTorch `2.5.1` on macOS 15.7.1
+
+## Installation Instructions
+
+### Prerequisites
+
+You must have PyTorch installed with the appropriate backend for your GPU before installing fused-ssim. The installation process requires the backend compilers to be available.
+
+### Step 1: Install PyTorch with Correct Backend
+
+Choose the installation method based on your GPU:
+
+#### NVIDIA CUDA
+
+First, ensure you have CUDA Toolkit installed on your system (version 11.8 or 12.x recommended).
+
+```bash
+# For CUDA 12.4
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+Verify NVCC (CUDA compiler) is available:
+```bash
+nvcc --version
+```
+
+#### AMD ROCm
+
+First, ensure you have ROCm installed on your system (version 5.7 or newer recommended).
+
+```bash
+# For ROCm 6.1
+pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.1
+```
+
+Verify HIP compiler is available:
+```bash
+hipcc --version
+```
+
+#### Apple Metal (MPS)
+
+Install PyTorch 2.5.1 or newer (Metal support is built-in on macOS):
+
+```bash
+pip install torch torchvision
+```
+
+Ensure you have Xcode Command Line Tools installed:
+```bash
+xcode-select --install
+```
+
+#### Intel SYCL
+
+First, ensure you have Intel oneAPI Base Toolkit installed with DPC++/SYCL compiler support.
+
+```bash
+# Install PyTorch for Intel XPU
+pip install torch torchvision --index-url https://download.pytorch.org/whl/xpu
+```
+
+Verify Intel SYCL compiler is available:
+```bash
+icpx --version
+```
+
+### Step 2: Install Fused-SSIM
+
+Once PyTorch and the appropriate backend compiler are installed:
+
+```bash
+# Install from GitHub (recommended)
+pip install git+https://github.com/rahul-goel/fused-ssim/ --no-build-isolation
+
+# Or clone and install locally
+git clone https://github.com/rahul-goel/fused-ssim.git
+cd fused-ssim
+pip install . --no-build-isolation
+```
+
+The setup.py script will automatically detect your GPU architecture. For verbose output:
+
+```bash
+pip install git+https://github.com/rahul-goel/fused-ssim/ -v --no-build-isolation
+```
+
+If the above commands don't work, try:
+
+```bash
+python setup.py install
+```
+
+### Troubleshooting
+
+- **CUDA errors**: Ensure your CUDA Toolkit version matches your PyTorch CUDA version
+- **ROCm errors**: Verify ROCm installation with `rocm-smi` and check PyTorch ROCm compatibility
+- **Metal errors**: Ensure Xcode Command Line Tools are installed and up to date
+- **Intel errors**: Source the Intel oneAPI environment before installation: `source /opt/intel/oneapi/setvars.sh`
 
 ## Usage
 ```python
@@ -56,7 +158,7 @@ with torch.no_grad():
 - Standard `11x11` convolutions supported.
 
 ## Performance
-This implementation is 5-8x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-mssim](https://github.com/VainF/pytorch-msssim).
+This implementation is 5-8x faster than the previous fastest (to the best of my knowledge) differentiable SSIM implementation [pytorch-msssim](https://github.com/VainF/pytorch-msssim).
 
 <img src="./images/training_time_4090.png" width="30%"> <img src="./images/inference_time_4090.png" width="30%"> <img src="./images/inference_time_m1_pro.png" width="30%">
 
@@ -75,6 +177,11 @@ If you leverage fused SSIM for your research work, please cite our main paper:
 ```
 
 ## Acknowledgements
-Thanks to [Bernhard](https://snosixtyboo.github.io) for the idea.
-Thanks to [Janusch](https://github.com/MrNeRF) for further optimizations.
-Thanks to [Florian](https://fhahlbohm.github.io/) and [Ishaan](https://ishaanshah.xyz) for testing.
+Thanks to:
+- [Bernhard](https://snosixtyboo.github.io) for the idea.
+- [asrathore-ai](https://github.com/asrathore-ai) for adding SYCL kernels.
+- [Anton Smirnov](https://pxl-th.github.io/) for adding AMD GPU enablement.
+- [Jonah J. Newton](https://jonahnewton.com.au/) for Apple MPS kernels.
+- [asrathore-ai](https://github.com/asrathore-ai) for adding SYCL kernels.
+- [Janusch](https://github.com/MrNeRF) for further CUDA optimizations.
+- [Florian](https://fhahlbohm.github.io/) and [Ishaan](https://ishaanshah.xyz) for testing.
