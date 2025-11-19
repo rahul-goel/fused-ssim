@@ -44,54 +44,56 @@ def configure_cuda():
             compiler_args["nvcc"].extend(fallback_archs)
             detected_arch = "multiple architectures"
 
-    return CUDAExtension, "ssim.cu", "fused_ssim_cuda", compiler_args, [], detected_arch
+    return CUDAExtension, "ssim3d.cu", "fused_ssim3d_cuda", compiler_args, [], detected_arch
 
 
-def configure_mps():
-    """Configure Apple MPS backend."""
-    log("Compiling for MPS.")
-    compiler_args = {"cxx": ["-O3", "-std=c++17", "-ObjC++", "-Wno-unused-parameter"]}
-    link_args = ["-framework", "Metal", "-framework", "Foundation"]
-    return CppExtension, "ssim.mm", "fused_ssim_mps", compiler_args, link_args, "Apple Silicon (MPS)"
+# def configure_mps():
+#     """Configure Apple MPS backend."""
+#     log("Compiling for MPS.")
+#     compiler_args = {"cxx": ["-O3", "-std=c++17", "-ObjC++", "-Wno-unused-parameter"]}
+#     link_args = ["-framework", "Metal", "-framework", "Foundation"]
+#     return CppExtension, "ssim.mm", "fused_ssim_mps", compiler_args, link_args, "Apple Silicon (MPS)"
 
 
-def configure_xpu():
-    """Configure Intel XPU (SYCL) backend."""
-    log("Compiling for XPU.")
-    os.environ['CXX'] = 'icpx'
+# def configure_xpu():
+#     """Configure Intel XPU (SYCL) backend."""
+#     log("Compiling for XPU.")
+#     os.environ['CXX'] = 'icpx'
 
-    compiler_args = {"cxx": ["-O3", "-std=c++17", "-fsycl"]}
-    link_args = ["-fsycl"]
+#     compiler_args = {"cxx": ["-O3", "-std=c++17", "-fsycl"]}
+#     link_args = ["-fsycl"]
 
-    try:
-        device_name = torch.xpu.get_device_name(0)
-        log(f"Detected Intel XPU: {device_name}")
-        detected_arch = f"Intel XPU (SYCL) - {device_name}"
-    except Exception:
-        log("Detected Intel XPU (SYCL)")
-        detected_arch = "Intel XPU (SYCL)"
+#     try:
+#         device_name = torch.xpu.get_device_name(0)
+#         log(f"Detected Intel XPU: {device_name}")
+#         detected_arch = f"Intel XPU (SYCL) - {device_name}"
+#     except Exception:
+#         log("Detected Intel XPU (SYCL)")
+#         detected_arch = "Intel XPU (SYCL)"
 
-    return CppExtension, "ssim_sycl.cpp", "fused_ssim_xpu", compiler_args, link_args, detected_arch
+#     return CppExtension, "ssim_sycl.cpp", "fused_ssim_xpu", compiler_args, link_args, detected_arch
 
 
 # Detect backend
 if torch.cuda.is_available():
     extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
 elif torch.mps.is_available():
-    extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_mps()
+    # Not supported for now
+    return ValueError("MPS backend is not supported at the moment.")
 elif hasattr(torch, 'xpu'):
-    extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_xpu()
+    # Not supported for now
+    return ValueError("XPU backend is not supported at the moment.")
 else:
     extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
 
 # Create a custom class that prints the architecture information
 class CustomBuildExtension(BuildExtension):
     def build_extensions(self):
-        # For SYCL, override compiler to use icpx
-        if 'xpu' in build_name:
-            self.compiler.compiler_so = ['icpx'] + self.compiler.compiler_so[1:]
-            self.compiler.compiler_cxx = ['icpx'] + self.compiler.compiler_cxx[1:]
-            self.compiler.linker_so = ['icpx'] + self.compiler.linker_so[1:]
+        # # For SYCL, override compiler to use icpx
+        # if 'xpu' in build_name:
+        #     self.compiler.compiler_so = ['icpx'] + self.compiler.compiler_so[1:]
+        #     self.compiler.compiler_cxx = ['icpx'] + self.compiler.compiler_cxx[1:]
+        #     self.compiler.linker_so = ['icpx'] + self.compiler.linker_so[1:]
 
         arch_info = f"Building with GPU architecture: {detected_arch if detected_arch else 'multiple architectures'}"
         print("\n" + "="*50)
@@ -100,8 +102,8 @@ class CustomBuildExtension(BuildExtension):
         super().build_extensions()
 
 setup(
-    name="fused_ssim",
-    packages=['fused_ssim'],
+    name="fused_ssim3d",
+    packages=['fused_ssim3d'],
     ext_modules=[
         extension_type(
             name=build_name,
