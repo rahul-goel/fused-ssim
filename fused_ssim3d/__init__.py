@@ -2,23 +2,18 @@ from typing import NamedTuple
 import torch.nn as nn
 import torch
 
-if torch.cuda.is_available():
-    from fused_ssim_cuda import fusedssim, fusedssim_backward
-elif torch.mps.is_available():
-    from fused_ssim_mps import fusedssim, fusedssim_backward
-elif hasattr(torch, 'xpu') and torch.xpu.is_available():
-    from fused_ssim_xpu import fusedssim, fusedssim_backward
+
+from fused_ssim3d_cuda import fused_ssim3d, fusedssim_backward3d
 
 
 allowed_padding = ["same", "valid"]
-
+    
 class FusedSSIMMap(torch.autograd.Function):
     @staticmethod
     def forward(ctx, C1, C2, img1, img2, padding="same", train=True):
-        ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim(C1, C2, img1, img2, train)
-
+        ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fused_ssim3d(C1, C2, img1, img2, train)
         if padding == "valid":
-            ssim_map = ssim_map[:, :, 5:-5, 5:-5]
+            ssim_map = ssim_map[:, :, 5:-5, 5:-5, 5:-5]
 
         ctx.save_for_backward(img1.detach(), img2, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
         ctx.C1 = C1
@@ -34,8 +29,8 @@ class FusedSSIMMap(torch.autograd.Function):
         dL_dmap = opt_grad
         if padding == "valid":
             dL_dmap = torch.zeros_like(img1)
-            dL_dmap[:, :, 5:-5, 5:-5] = opt_grad
-        grad = fusedssim_backward(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
+            dL_dmap[:, :, 5:-5, 5:-5, 5:-5] = opt_grad
+        grad = fusedssim_backward3d(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
         return None, None, grad, None, None, None
 
 def fused_ssim(img1, img2, padding="same", train=True):

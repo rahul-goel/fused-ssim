@@ -46,45 +46,7 @@ def configure_cuda():
 
     return CUDAExtension, "ssim3d.cu", "fused_ssim3d_cuda", compiler_args, [], detected_arch
 
-
-# def configure_mps():
-#     """Configure Apple MPS backend."""
-#     log("Compiling for MPS.")
-#     compiler_args = {"cxx": ["-O3", "-std=c++17", "-ObjC++", "-Wno-unused-parameter"]}
-#     link_args = ["-framework", "Metal", "-framework", "Foundation"]
-#     return CppExtension, "ssim.mm", "fused_ssim_mps", compiler_args, link_args, "Apple Silicon (MPS)"
-
-
-# def configure_xpu():
-#     """Configure Intel XPU (SYCL) backend."""
-#     log("Compiling for XPU.")
-#     os.environ['CXX'] = 'icpx'
-
-#     compiler_args = {"cxx": ["-O3", "-std=c++17", "-fsycl"]}
-#     link_args = ["-fsycl"]
-
-#     try:
-#         device_name = torch.xpu.get_device_name(0)
-#         log(f"Detected Intel XPU: {device_name}")
-#         detected_arch = f"Intel XPU (SYCL) - {device_name}"
-#     except Exception:
-#         log("Detected Intel XPU (SYCL)")
-#         detected_arch = "Intel XPU (SYCL)"
-
-#     return CppExtension, "ssim_sycl.cpp", "fused_ssim_xpu", compiler_args, link_args, detected_arch
-
-
-# Detect backend
-if torch.cuda.is_available():
-    extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
-elif torch.mps.is_available():
-    # Not supported for now
-    return ValueError("MPS backend is not supported at the moment.")
-elif hasattr(torch, 'xpu'):
-    # Not supported for now
-    return ValueError("XPU backend is not supported at the moment.")
-else:
-    extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
+extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
 
 # Create a custom class that prints the architecture information
 class CustomBuildExtension(BuildExtension):

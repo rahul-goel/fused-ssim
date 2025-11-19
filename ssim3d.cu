@@ -71,7 +71,7 @@ __device__ __forceinline__ int xconv_idx(int z, int y, int x, int stat) {
 }
 
 __device__ __forceinline__ void accumulate_xaxis(
-    const float* sTile,
+    float* sTile,
     int lz, int ly, int lx, float out[5]
 ) {
     out[0] = out[1] = out[2] = out[3] = out[4] = 0.f;
@@ -102,7 +102,7 @@ __device__ __forceinline__ void accumulate_xaxis(
 }
 
 __device__ __forceinline__ void accumulate_yaxis(
-    const float* sTile,
+    float* sTile,
     int lz, int ly, int lx, float out[5]
 ) {
     out[0] = out[1] = out[2] = out[3] = out[4] = 0.f;
@@ -135,7 +135,7 @@ __device__ __forceinline__ void accumulate_yaxis(
 //  - Optionally writes partial derivatives
 //    to dm_dmu1, dm_dsigma1_sq, dm_dsigma12
 // ------------------------------------------
-__global__ void fusedssim3DCUDA(
+__global__ void fusedssim3dCUDA(
     int H, //height
     int W, //width
     int D, //depth
@@ -394,293 +394,295 @@ __global__ void fusedssim3DCUDA(
         }
     }
 
-    __device__ __forceinline__ int sdata_idx(int stat, int z, int y, int x) {
-        return (stat * SHARED_Z * SHARED_Y * SHARED_X) + (z * SHARED_Y * SHARED_X) + (y * SHARED_X) + x;
-    }
+}
 
-    __device__ __forceinline__ int scratch_idx(int z, int y, int x, int stat) {
-        return (((z * CONV_Y) + y) * CONV_X + x) * 3 + stat;
-    }
+__device__ __forceinline__ int sdata_idx(int stat, int z, int y, int x) {
+    return (stat * SHARED_Z * SHARED_Y * SHARED_X) + (z * SHARED_Y * SHARED_X) + (y * SHARED_X) + x;
+}
 
-    __device__ __forceinline__ void accumulate_xaxis_back(
-        const float* sData,
-        int lz, int ly, int lx, float out[3]
-    ) {
-        out[0] = out[1] = out[2] = 0.f;
+__device__ __forceinline__ int scratch_idx(int z, int y, int x, int stat) {
+    return (((z * CONV_Y) + y) * CONV_X + x) * 3 + stat;
+}
+
+__device__ __forceinline__ void accumulate_xaxis_back(
+    float* sData,
+    int lz, int ly, int lx, float out[3]
+) {
+    out[0] = out[1] = out[2] = 0.f;
 #pragma unroll
-        for (int d = 1; d <= HALO; ++d) {
-            float w = cGauss[HALO - d];
-            float left0  = sData[sdata_idx(0, lz, ly, lx - d)];
-            float left1  = sData[sdata_idx(1, lz, ly, lx - d)];
-            float left2  = sData[sdata_idx(2, lz, ly, lx - d)];
+    for (int d = 1; d <= HALO; ++d) {
+        float w = cGauss[HALO - d];
+        float left0  = sData[sdata_idx(0, lz, ly, lx - d)];
+        float left1  = sData[sdata_idx(1, lz, ly, lx - d)];
+        float left2  = sData[sdata_idx(2, lz, ly, lx - d)];
 
-            float right0 = sData[sdata_idx(0, lz, ly, lx + d)];
-            float right1 = sData[sdata_idx(1, lz, ly, lx + d)];
-            float right2 = sData[sdata_idx(2, lz, ly, lx + d)];
+        float right0 = sData[sdata_idx(0, lz, ly, lx + d)];
+        float right1 = sData[sdata_idx(1, lz, ly, lx + d)];
+        float right2 = sData[sdata_idx(2, lz, ly, lx + d)];
 
-            out[0] += (left0 + right0) * w;
-            out[1] += (left1 + right1) * w;
-            out[2] += (left2 + right2) * w;
-        }
-        // center
-        {
-            float wc = cGauss[HALO];
-            float c0 = sData[sdata_idx(0, lz, ly, lx)];
-            float c1 = sData[sdata_idx(1, lz, ly, lx)];
-            float c2 = sData[sdata_idx(2, lz, ly, lx)];
-            out[0] += c0 * wc;
-            out[1] += c1 * wc;
-            out[2] += c2 * wc;
-        }
+        out[0] += (left0 + right0) * w;
+        out[1] += (left1 + right1) * w;
+        out[2] += (left2 + right2) * w;
     }
+    // center
+    {
+        float wc = cGauss[HALO];
+        float c0 = sData[sdata_idx(0, lz, ly, lx)];
+        float c1 = sData[sdata_idx(1, lz, ly, lx)];
+        float c2 = sData[sdata_idx(2, lz, ly, lx)];
+        out[0] += c0 * wc;
+        out[1] += c1 * wc;
+        out[2] += c2 * wc;
+    }
+}
 
-    __device__ __forceinline__ void accumulate_yaxis_back(
-        const float* sData,
-        int lz, int ly, int lx, float out[3]
-    ) {
-        out[0] = out[1] = out[2] = 0.f;
+__device__ __forceinline__ void accumulate_yaxis_back(
+    float* sData,
+    int lz, int ly, int lx, float out[3]
+) {
+    out[0] = out[1] = out[2] = 0.f;
 #pragma unroll
-        for (int d = 1; d <= HALO; ++d) {
-            float w = cGauss[HALO - d];
-            float* top0 = &sData[scratch_idx(lz, ly - d, lx, 0)];
-            float* bot0 = &sData[scratch_idx(lz, ly + d, lx, 0)];
+    for (int d = 1; d <= HALO; ++d) {
+        float w = cGauss[HALO - d];
+        float* top0 = &sData[scratch_idx(lz, ly - d, lx, 0)];
+        float* bot0 = &sData[scratch_idx(lz, ly + d, lx, 0)];
 
-            out[0] += (top0[0] + bot0[0]) * w;
-            out[1] += (top0[1] + bot0[1]) * w;
-            out[2] += (top0[2] + bot0[2]) * w;
-        }   
-            float* center = &sData[scratch_idx(lz, ly, lx, 0)];
-            float wc = cGauss[HALO];
-            out[0]  += center[0] * wc;
-            out[1] += center[1] * wc;
-            out[2] += center[2] * wc;
-    }
+        out[0] += (top0[0] + bot0[0]) * w;
+        out[1] += (top0[1] + bot0[1]) * w;
+        out[2] += (top0[2] + bot0[2]) * w;
+    }   
+        float* center = &sData[scratch_idx(lz, ly, lx, 0)];
+        float wc = cGauss[HALO];
+        out[0]  += center[0] * wc;
+        out[1] += center[1] * wc;
+        out[2] += center[2] * wc;
+}
 
 
-    // ------------------------------------------
-    // Backward Kernel: Apply chain rule to get
-    //    dL/d(img1) from partial derivatives
-    //    (dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
-    //    and dL/dmap (the gradient from above).
-    // ------------------------------------------
-    __global__ void fusedssim_backward3DCUDA(
-        int H,
-        int W,
-        int D,
-        int B,
-        int CH,
-        float C1,
-        float C2,
-        const float* __restrict__ img1,
-        const float* __restrict__ img2,
-        const float* __restrict__ dL_dmap,
-        float* __restrict__ dL_dimg1,
-        const float* __restrict__ dm_dmu1,
-        const float* __restrict__ dm_dsigma1_sq,
-        const float* __restrict__ dm_dsigma12
-    ) {
-        auto block = cg::this_thread_block();
+// ------------------------------------------
+// Backward Kernel: Apply chain rule to get
+//    dL/d(img1) from partial derivatives
+//    (dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
+//    and dL/dmap (the gradient from above).
+// ------------------------------------------
+__global__ void fusedssim_backward3dCUDA(
+    int H,
+    int W,
+    int D,
+    int B,
+    int CH,
+    float C1,
+    float C2,
+    const float* __restrict__ img1,
+    const float* __restrict__ img2,
+    const float* __restrict__ dL_dmap,
+    float* __restrict__ dL_dimg1,
+    const float* __restrict__ dm_dmu1,
+    const float* __restrict__ dm_dsigma1_sq,
+    const float* __restrict__ dm_dsigma12
+) {
+    auto block = cg::this_thread_block();
 
-        const int pix_z  = block.group_index().z * BLOCK_Z + block.thread_index().z;
-        const int pix_y  = block.group_index().y * BLOCK_Y + block.thread_index().y;
-        const int pix_x  = block.group_index().x * BLOCK_X + block.thread_index().x;
-        const int pix_id = pix_z * W * H + pix_y * W + pix_x;
-        const int num_pix = H * W * D;
-        // const int bIdx   = block.group_index().z;
+    const int pix_z  = block.group_index().z * BLOCK_Z + block.thread_index().z;
+    const int pix_y  = block.group_index().y * BLOCK_Y + block.thread_index().y;
+    const int pix_x  = block.group_index().x * BLOCK_X + block.thread_index().x;
+    const int pix_id = pix_z * W * H + pix_y * W + pix_x;
+    const int num_pix = H * W * D;
+    // const int bIdx   = block.group_index().z;
 
-        // Shared memory for the fused data:
-        // [0]: dm_dmu1*dL, [1]: dm_dsigma1_sq*dL, [2]: dm_dsigma12*dL
-        // __shared__ float sData[3][SHARED_Y][SHARED_X];
-        // __shared__ float sScratch[CONV_Y][CONV_X][3];
-        // Initialize one shared memory block to serve both the fused data and scratch
-        __shared__ float sData[3 * SHARED_Z * SHARED_Y * SHARED_X];
+    // Shared memory for the fused data:
+    // [0]: dm_dmu1*dL, [1]: dm_dsigma1_sq*dL, [2]: dm_dsigma12*dL
+    // __shared__ float sData[3][SHARED_Y][SHARED_X];
+    // __shared__ float sScratch[CONV_Y][CONV_X][3];
+    // Initialize one shared memory block to serve both the fused data and scratch
+    __shared__ float sData[3 * SHARED_Z * SHARED_Y * SHARED_X];
 
-        for (int b = 0; b < B; ++b) {
-            for (int c = 0; c < CH; ++c) {
-                float p1 = 0.f, p2 = 0.f;
-                if (pix_x < W && pix_y < H) {
-                    p1 = get_pix_value(img1, b, c, pix_z, pix_y, pix_x, CH, H, W, D);
-                    p2 = get_pix_value(img2, b, c, pix_z, pix_y, pix_x, CH, H, W, D);
-                }
+    for (int b = 0; b < B; ++b) {
+        for (int c = 0; c < CH; ++c) {
+            float p1 = 0.f, p2 = 0.f;
+            if (pix_x < W && pix_y < H) {
+                p1 = get_pix_value(img1, b, c, pix_z, pix_y, pix_x, CH, H, W, D);
+                p2 = get_pix_value(img2, b, c, pix_z, pix_y, pix_x, CH, H, W, D);
+            }
 
-                // (1) Load + fuse multiplication
-                {   
-                    const int start_z = block.group_index().z * BLOCK_Z;
-                    const int start_y = block.group_index().y * BLOCK_Y;
-                    const int start_x = block.group_index().x * BLOCK_X;
+            // (1) Load + fuse multiplication
+            {   
+                const int start_z = block.group_index().z * BLOCK_Z;
+                const int start_y = block.group_index().y * BLOCK_Y;
+                const int start_x = block.group_index().x * BLOCK_X;
 
-                    int tid = threadIdx.z * blockDim.y * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x;
-                    int warp_id = tid / 32; //warp index within block
-                    int lane_id = tid % 32; //lane index within warp
-                    int totalThreads = BLOCK_X * BLOCK_Y * BLOCK_Z; //total threads per block
-                    int num_warps = (totalThreads + 31) / 32;
-                    
-                    for (int depth = warp_id; depth < SHARED_Z; depth += num_warps) {
-                        int gz = start_z + depth - HALO;
-                        for (int row = 0; row < SHARED_Y; ++row) {
-                            int gy = start_y + row - HALO;
-                            for (int col = lane_id; col < SHARED_X; col += 32) {
-                                int gx = start_x + col - HALO;
+                int tid = threadIdx.z * blockDim.y * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x;
+                int warp_id = tid / 32; //warp index within block
+                int lane_id = tid % 32; //lane index within warp
+                int totalThreads = BLOCK_X * BLOCK_Y * BLOCK_Z; //total threads per block
+                int num_warps = (totalThreads + 31) / 32;
+                
+                for (int depth = warp_id; depth < SHARED_Z; depth += num_warps) {
+                    int gz = start_z + depth - HALO;
+                    for (int row = 0; row < SHARED_Y; ++row) {
+                        int gy = start_y + row - HALO;
+                        for (int col = lane_id; col < SHARED_X; col += 32) {
+                            int gx = start_x + col - HALO;
 
-                                float chain = get_pix_value(dL_dmap,      b, c, gz, gy, gx, CH, H, W, D);
-                                float vmu   = get_pix_value(dm_dmu1,      b, c, gz, gy, gx, CH, H, W, D);
-                                float vs1   = get_pix_value(dm_dsigma1_sq,b, c, gz, gy, gx, CH, H, W, D);
-                                float vs12  = get_pix_value(dm_dsigma12,  b, c, gz, gy, gx, CH, H, W, D);
+                            float chain = get_pix_value(dL_dmap,      b, c, gz, gy, gx, CH, H, W, D);
+                            float vmu   = get_pix_value(dm_dmu1,      b, c, gz, gy, gx, CH, H, W, D);
+                            float vs1   = get_pix_value(dm_dsigma1_sq,b, c, gz, gy, gx, CH, H, W, D);
+                            float vs12  = get_pix_value(dm_dsigma12,  b, c, gz, gy, gx, CH, H, W, D);
 
-                                sData[sdata_idx(0, depth, row, col)] = vmu  * chain;
-                                sData[sdata_idx(1, depth, row, col)] = vs1  * chain;
-                                sData[sdata_idx(2, depth, row, col)] = vs12 * chain;
-                            }
+                            sData[sdata_idx(0, depth, row, col)] = vmu  * chain;
+                            sData[sdata_idx(1, depth, row, col)] = vs1  * chain;
+                            sData[sdata_idx(2, depth, row, col)] = vs12 * chain;
                         }
                     }
                 }
-                block.sync();
-
-                //------------------------------------------------------------
-                // (2) X axis pass
-                //------------------------------------------------------------
-                int lz = threadIdx.z;
-                int ly = threadIdx.y;
-                int lx = threadIdx.x + HALO;
-                
-                
-                int ly2 = ly + BLOCK_Y;      // second Y row in same warp
-                int ly3 = ly + 2*BLOCK_Y;    // third Y row in same warp
-                int ly4 = ly + 3*BLOCK_Y;    // fourth Y row in same warp
-
-                int lz2 = lz + BLOCK_Z;      // second Z row in same warp
-                int lz3 = lz + 2*BLOCK_Z;    // third Z row in same warp
-                int lz4 = lz + 3*BLOCK_Z;    // fourth Z row in same warp
-
-                float *dst; // pointer to write sScratch results
-
-                float sScratch[3], sScratch_y2[3], sScratch_y3[3], sScratch_y4[3], sScratch_z2[3], sScratch_z3[3], sScratch_z4[3];
-
-                accumulate_xaxis_back(sData, lz, ly, lx, sScratch);
-                // Handle second and third y pass (here due to smaller block size, it always happens)
-                accumulate_xaxis_back(sData, lz, ly2, lx, sScratch_y2);
-                accumulate_xaxis_back(sData, lz, ly3, lx, sScratch_y3);
-                // Possibly handle fourth Y row in same warp
-                if (ly4 < CONV_Y) {
-                    accumulate_xaxis_back(sData, lz, ly4, lx, sScratch_y4);
-                }
-                // Handle second and third Z row in same warp
-                accumulate_xaxis_back(sData, lz2, ly, lx, sScratch_z2);
-                accumulate_xaxis_back(sData, lz3, ly, lx, sScratch_z3);
-                // Possibly handle fourth Z row in same warp
-                if (lz4 < CONV_Z) {
-                    accumulate_xaxis_back(sData, lz4, ly, lx, sScratch_z4);
-                }
-
-                block.sync();
-
-                // Overwrite sData with X axis pass sScratch results
-
-                dst = &sData[scratch_idx(lz,ly,threadIdx.x, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch[i];
-
-                dst = &sData[scratch_idx(lz,ly2,threadIdx.x, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_y2[i];
-                dst = &sData[scratch_idx(lz,ly3,threadIdx.x, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_y3[i];
-                if (ly4 < CONV_Y) {
-                    dst = &sData[scratch_idx(lz,ly4,threadIdx.x, 0)];
-                    #pragma unroll
-                    for (int i = 0; i < 3; ++i) dst[i] = sScratch_y4[i];
-                }
-
-                dst = &sData[scratch_idx(lz2,ly,threadIdx.x, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z2[i];
-                dst = &sData[scratch_idx(lz3,ly,threadIdx.x, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z3[i];
-                if (lz4 < CONV_Z) {
-                    dst = &sData[scratch_idx(lz4,ly,threadIdx.x, 0)];
-                    #pragma unroll
-                    for (int i = 0; i < 3; ++i) dst[i] = sScratch_z4[i];
-                }
-
-                block.sync();
-
-                //----------------------------------------------------------
-                // (2) Y axis pass
-                //----------------------------------------------------------
-                ly = threadIdx.y + HALO;
-                lx = threadIdx.x; 
-
-                accumulate_yaxis_back(sData, lz, ly, lx, sScratch);
-                // Handle second and third Z row in same warp
-                accumulate_yaxis_back(sData, lz2, ly, lx, sScratch_z2);
-                accumulate_yaxis_back(sData, lz3, ly, lx, sScratch_z3);
-                // Possibly handle fourth Z row in same warp
-                if (lz4 < CONV_Z) {
-                    accumulate_yaxis_back(sData, lz4, ly, lx, sScratch_z4);
-                }
-
-                block.sync();
-
-                // Overwrite sData with Y axis pass sScratch results
-                dst = &sData[scratch_idx(lz,threadIdx.y,lx, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch[i];
-
-                dst = &sData[scratch_idx(lz2,threadIdx.y,lx, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z2[i];
-                dst = &sData[scratch_idx(lz3,threadIdx.y,lx, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z3[i];
-                if (lz4 < CONV_Z) {
-                    dst = &sData[scratch_idx(lz4,threadIdx.y,lx, 0)];
-                    #pragma unroll
-                    for (int i = 0; i < 3; ++i) dst[i] = sScratch_z4[i];
-                }
-
-                block.sync();
-
-                //----------------------------------------------------------
-                // (3) Z axis pass -> finalize dL/d(img1)
-                //----------------------------------------------------------
-                if (pix_x < W && pix_y < H && pix_z < D) {
-                    int lz = threadIdx.z + HALO;
-                    int ly = threadIdx.y;
-
-                    float sum0 = 0.f, sum1 = 0.f, sum2 = 0.f;
-
-        #pragma unroll
-                    for (int d = 1; d <= HALO; ++d) {
-                        float w = cGauss[HALO - d];
-                        float* top = &sData[scratch_idx(lz - d, ly, lx, 0)];
-                        float* bot = &sData[scratch_idx(lz + d, ly, lx, 0)];
-
-                        sum0 += (top[0] + bot[0]) * w;
-                        sum1 += (top[1] + bot[1]) * w;
-                        sum2 += (top[2] + bot[2]) * w;
-                    }
-                    // center
-                    {
-                        float wc = cGauss[HALO];
-                        float* ctr = &sData[scratch_idx(lz, ly, lx, 0)];
-                        sum0 += ctr[0] * wc;
-                        sum1 += ctr[1] * wc;
-                        sum2 += ctr[2] * wc;
-                    }
-
-                    // final accumulation
-                    float dL_dpix = sum0 + (2.f * p1) * sum1 + (p2) * sum2;
-
-                    int out_idx = b * CH * num_pix + c * num_pix + pix_id;
-                    dL_dimg1[out_idx] = dL_dpix;
-                }
-                block.sync();
             }
+            block.sync();
+
+            //------------------------------------------------------------
+            // (2) X axis pass
+            //------------------------------------------------------------
+            int lz = threadIdx.z;
+            int ly = threadIdx.y;
+            int lx = threadIdx.x + HALO;
+            
+            
+            int ly2 = ly + BLOCK_Y;      // second Y row in same warp
+            int ly3 = ly + 2*BLOCK_Y;    // third Y row in same warp
+            int ly4 = ly + 3*BLOCK_Y;    // fourth Y row in same warp
+
+            int lz2 = lz + BLOCK_Z;      // second Z row in same warp
+            int lz3 = lz + 2*BLOCK_Z;    // third Z row in same warp
+            int lz4 = lz + 3*BLOCK_Z;    // fourth Z row in same warp
+
+            float *dst; // pointer to write sScratch results
+
+            float sScratch[3], sScratch_y2[3], sScratch_y3[3], sScratch_y4[3], sScratch_z2[3], sScratch_z3[3], sScratch_z4[3];
+
+            accumulate_xaxis_back(sData, lz, ly, lx, sScratch);
+            // Handle second and third y pass (here due to smaller block size, it always happens)
+            accumulate_xaxis_back(sData, lz, ly2, lx, sScratch_y2);
+            accumulate_xaxis_back(sData, lz, ly3, lx, sScratch_y3);
+            // Possibly handle fourth Y row in same warp
+            if (ly4 < CONV_Y) {
+                accumulate_xaxis_back(sData, lz, ly4, lx, sScratch_y4);
+            }
+            // Handle second and third Z row in same warp
+            accumulate_xaxis_back(sData, lz2, ly, lx, sScratch_z2);
+            accumulate_xaxis_back(sData, lz3, ly, lx, sScratch_z3);
+            // Possibly handle fourth Z row in same warp
+            if (lz4 < CONV_Z) {
+                accumulate_xaxis_back(sData, lz4, ly, lx, sScratch_z4);
+            }
+
+            block.sync();
+
+            // Overwrite sData with X axis pass sScratch results
+
+            dst = &sData[scratch_idx(lz,ly,threadIdx.x, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch[i];
+
+            dst = &sData[scratch_idx(lz,ly2,threadIdx.x, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch_y2[i];
+            dst = &sData[scratch_idx(lz,ly3,threadIdx.x, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch_y3[i];
+            if (ly4 < CONV_Y) {
+                dst = &sData[scratch_idx(lz,ly4,threadIdx.x, 0)];
+                #pragma unroll
+                for (int i = 0; i < 3; ++i) dst[i] = sScratch_y4[i];
+            }
+
+            dst = &sData[scratch_idx(lz2,ly,threadIdx.x, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z2[i];
+            dst = &sData[scratch_idx(lz3,ly,threadIdx.x, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z3[i];
+            if (lz4 < CONV_Z) {
+                dst = &sData[scratch_idx(lz4,ly,threadIdx.x, 0)];
+                #pragma unroll
+                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z4[i];
+            }
+
+            block.sync();
+
+            //----------------------------------------------------------
+            // (2) Y axis pass
+            //----------------------------------------------------------
+            ly = threadIdx.y + HALO;
+            lx = threadIdx.x; 
+
+            accumulate_yaxis_back(sData, lz, ly, lx, sScratch);
+            // Handle second and third Z row in same warp
+            accumulate_yaxis_back(sData, lz2, ly, lx, sScratch_z2);
+            accumulate_yaxis_back(sData, lz3, ly, lx, sScratch_z3);
+            // Possibly handle fourth Z row in same warp
+            if (lz4 < CONV_Z) {
+                accumulate_yaxis_back(sData, lz4, ly, lx, sScratch_z4);
+            }
+
+            block.sync();
+
+            // Overwrite sData with Y axis pass sScratch results
+            dst = &sData[scratch_idx(lz,threadIdx.y,lx, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch[i];
+
+            dst = &sData[scratch_idx(lz2,threadIdx.y,lx, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z2[i];
+            dst = &sData[scratch_idx(lz3,threadIdx.y,lx, 0)];
+            #pragma unroll
+            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z3[i];
+            if (lz4 < CONV_Z) {
+                dst = &sData[scratch_idx(lz4,threadIdx.y,lx, 0)];
+                #pragma unroll
+                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z4[i];
+            }
+
+            block.sync();
+
+            //----------------------------------------------------------
+            // (3) Z axis pass -> finalize dL/d(img1)
+            //----------------------------------------------------------
+            if (pix_x < W && pix_y < H && pix_z < D) {
+                int lz = threadIdx.z + HALO;
+                int ly = threadIdx.y;
+
+                float sum0 = 0.f, sum1 = 0.f, sum2 = 0.f;
+
+    #pragma unroll
+                for (int d = 1; d <= HALO; ++d) {
+                    float w = cGauss[HALO - d];
+                    float* top = &sData[scratch_idx(lz - d, ly, lx, 0)];
+                    float* bot = &sData[scratch_idx(lz + d, ly, lx, 0)];
+
+                    sum0 += (top[0] + bot[0]) * w;
+                    sum1 += (top[1] + bot[1]) * w;
+                    sum2 += (top[2] + bot[2]) * w;
+                }
+                // center
+                {
+                    float wc = cGauss[HALO];
+                    float* ctr = &sData[scratch_idx(lz, ly, lx, 0)];
+                    sum0 += ctr[0] * wc;
+                    sum1 += ctr[1] * wc;
+                    sum2 += ctr[2] * wc;
+                }
+
+                // final accumulation
+                float dL_dpix = sum0 + (2.f * p1) * sum1 + (p2) * sum2;
+
+                int out_idx = b * CH * num_pix + c * num_pix + pix_id;
+                dL_dimg1[out_idx] = dL_dpix;
+            }
+            block.sync();
         }
     }
 }
+
 
 // ------------------------------------------
 // PyTorch Interface (Forward)
@@ -688,7 +690,7 @@ __global__ void fusedssim3DCUDA(
 //   If train=false, derivative Tensors are empty.
 // ------------------------------------------
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
-fusedssim3D(
+fusedssim3d(
     float C1,
     float C2,
     torch::Tensor &img1,
@@ -716,7 +718,7 @@ fusedssim3D(
     auto dm_dsigma1_sq = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
     auto dm_dsigma12   = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
 
-    fusedssim3DCUDA<<<grid, block>>>(
+    fusedssim3dCUDA<<<grid, block>>>(
         H, W, D, B, CH, C1, C2,
         img1.contiguous().data_ptr<float>(),
         img2.contiguous().data_ptr<float>(),
@@ -736,7 +738,7 @@ fusedssim3D(
 //   returns dL/d(img1).
 // ------------------------------------------
 torch::Tensor
-fusedssim_backward3D(
+fusedssim_backward3d(
     float C1,
     float C2,
     torch::Tensor &img1,
@@ -760,8 +762,8 @@ fusedssim_backward3D(
               (D + BLOCK_Z - 1) / BLOCK_Z);
     dim3 block(BLOCK_X, BLOCK_Y, BLOCK_Z);
 
-    fusedssim_backward3DCUDA<<<grid, block>>>(
-        H, W, D, CH, C1, C2,
+    fusedssim_backward3dCUDA<<<grid, block>>>(
+        H, W, D, B, CH, C1, C2,
         img1.contiguous().data_ptr<float>(),
         img2.contiguous().data_ptr<float>(),
         dL_dmap.contiguous().data_ptr<float>(),
