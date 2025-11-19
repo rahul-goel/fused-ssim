@@ -120,11 +120,11 @@ __device__ __forceinline__ void accumulate_yaxis(
     }   
         float* center = &sTile[xconv_idx(lz, ly, lx, 0)];
         float wc = cGauss[HALO];
-        out[0]  += center[0] * wc;
-        out[1] += (center[0] * center[0]) * wc;
-        out[2] += center[1] * wc;
-        out[3] += (center[1] * center[1]) * wc;
-        out[4] += (center[0] * center[1]) * wc;
+        out[0] += center[0] * wc;
+        out[1] += center[1] * wc;
+        out[2] += center[2] * wc;
+        out[3] += center[3] * wc;
+        out[4] += center[4] * wc;
 }
 
 
@@ -229,8 +229,6 @@ __global__ void fusedssim3dCUDA(
             // Handle second and third y pass (here due to smaller block size, it always happens)
             accumulate_xaxis(sTile, lz, ly2, lx, xconv_y2);
             accumulate_xaxis(sTile, lz, ly3, lx, xconv_y3);
-            
-
             // Possibly handle fourth Y row in same warp
             if (ly4 < CONV_Y) {
                 accumulate_xaxis(sTile, lz, ly4, lx, xconv_y4);
@@ -335,7 +333,7 @@ __global__ void fusedssim3dCUDA(
             for (int d = 1; d <= HALO; ++d) {
                 float w = cGauss[HALO - d];
                 float* top = &sTile[xconv_idx(lz - d, ly, lx, 0)];
-                float* bot = &sTile[xconv_idx(lz + d, ly, lx,0)];
+                float* bot = &sTile[xconv_idx(lz + d, ly, lx, 0)];
 
                 xconv[0] += (top[0] + bot[0]) * w;
                 xconv[1] += (top[1] + bot[1]) * w;
@@ -752,8 +750,8 @@ fusedssim_backward3d(
     int B  = img1.size(0);
     int CH = img1.size(1);
     int D  = img1.size(2);
-    int H  = img1.size(2);
-    int W  = img1.size(3);
+    int H  = img1.size(3);
+    int W  = img1.size(4);
 
     auto dL_dimg1 = torch::zeros_like(img1);
 

@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch
 
 
-from fused_ssim3d_cuda import fused_ssim3d, fusedssim_backward3d
+from fused_ssim3d_cuda import fusedssim3d, fusedssim_backward3d
 
 
 allowed_padding = ["same", "valid"]
@@ -11,7 +11,7 @@ allowed_padding = ["same", "valid"]
 class FusedSSIMMap(torch.autograd.Function):
     @staticmethod
     def forward(ctx, C1, C2, img1, img2, padding="same", train=True):
-        ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fused_ssim3d(C1, C2, img1, img2, train)
+        ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim3d(C1, C2, img1, img2, train)
         if padding == "valid":
             ssim_map = ssim_map[:, :, 5:-5, 5:-5, 5:-5]
 
