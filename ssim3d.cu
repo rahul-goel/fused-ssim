@@ -275,7 +275,6 @@ __global__ void fusedssim3dCUDA(
                 int lz_cur = threadIdx.z + dz * BLOCK_Z;
                 if (lz_cur >= CONV_Z) break;
                 
-                // We need to keep using ly due to the definition of conv_idx, using extended Y axis size
                 float* dst = &sTile[conv_idx_YZ(lz_cur, threadIdx.y, lx, 0)]; 
                 #pragma unroll
                 for (int i = 0; i < 5; ++i) {

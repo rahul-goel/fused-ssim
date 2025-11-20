@@ -68,9 +68,10 @@ setup(
     packages=['fused_ssim3d'],
     ext_modules=[
         extension_type(
-            name=build_name,
+            name="fused_ssim3d_cuda",
             sources=[
-                extension_file,
+                "ssim2d.cu",
+                "ssim3d.cu",
                 "ext.cpp"],
             extra_compile_args=compiler_args,
             extra_link_args=link_args

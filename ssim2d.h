@@ -5,7 +5,7 @@
 #include <string>
 
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
-fusedssim(
+fusedssim2d(
     float C1,
     float C2,
     torch::Tensor &img1,
@@ -14,7 +14,7 @@ fusedssim(
 );
 
 torch::Tensor
-fusedssim_backward(
+fusedssim_backward2d(
     float C1,
     float C2,
     torch::Tensor &img1,
