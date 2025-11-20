@@ -37,7 +37,8 @@ __constant__ float cGauss[11] = {
 
 // For partial results after horizontal pass
 #define CONV_X BLOCK_X
-#define CONV_Y SHARED_Y
+#define CONV_YX SHARED_Y // Two are needed, for the X axis and Y axis passes
+#define CONV_YZ BLOCK_Y
 #define CONV_Z SHARED_Z 
 
 // ------------------------------------------
@@ -66,8 +67,12 @@ __device__ __forceinline__ int tile_idx(int z, int y, int x, int channel) {
     return ((((z * SHARED_Y) + y) * SHARED_X) + x) * 2 + channel;
 }
 
-__device__ __forceinline__ int xconv_idx(int z, int y, int x, int stat) {
-    return ((((z * CONV_Y) + y) * CONV_X) + x) * 5 + stat;
+__device__ __forceinline__ int conv_idx_YX(int z, int y, int x, int stat) {
+    return ((((z * CONV_YX) + y) * CONV_X) + x) * 5 + stat;
+}
+
+__device__ __forceinline__ int conv_idx_YZ(int z, int y, int x, int stat) {
+    return (((z * CONV_YZ) + y) * CONV_X + x) * 5 + stat;
 }
 
 __device__ __forceinline__ void accumulate_xaxis(
@@ -109,8 +114,8 @@ __device__ __forceinline__ void accumulate_yaxis(
 #pragma unroll
     for (int d = 1; d <= HALO; ++d) {
         float w = cGauss[HALO - d];
-        float* top = &sTile[xconv_idx(lz, ly - d, lx,0)];
-        float* bot = &sTile[xconv_idx(lz, ly + d, lx,0)];
+        float* top = &sTile[conv_idx_YX(lz, ly - d, lx,0)];
+        float* bot = &sTile[conv_idx_YX(lz, ly + d, lx,0)];
 
         out[0] += (top[0] + bot[0]) * w;
         out[1] += (top[1] + bot[1]) * w;
@@ -118,7 +123,7 @@ __device__ __forceinline__ void accumulate_yaxis(
         out[3] += (top[3] + bot[3]) * w;
         out[4] += (top[4] + bot[4]) * w;
     }   
-        float* center = &sTile[xconv_idx(lz, ly, lx, 0)];
+        float* center = &sTile[conv_idx_YX(lz, ly, lx, 0)];
         float wc = cGauss[HALO];
         out[0] += center[0] * wc;
         out[1] += center[1] * wc;
@@ -159,7 +164,7 @@ __global__ void fusedssim3dCUDA(
     const int num_pix = H * W * D;
 
     //Initialize one shared memory block to serve both the image and intermediate sums
-    __shared__ float sTile[CONV_Z * CONV_Y * CONV_X * 5]; //CONV len requirements are larger than SHARED len
+    __shared__ float sTile[CONV_Z * CONV_YX * CONV_X * 5]; //CONV len requirements are larger than SHARED len
 
     // // Shared memory for the tile (img1, img2)
     // __shared__ float sTile[SHARED_Y][SHARED_X][2];
@@ -212,69 +217,38 @@ __global__ void fusedssim3dCUDA(
             int ly = threadIdx.y;
             int lx = threadIdx.x + HALO;  // skip left halo
 
-            int ly2 = ly + BLOCK_Y;      // second Y row in same warp
-            int ly3 = ly + 2*BLOCK_Y;    // third Y row in same warp
-            int ly4 = ly + 3*BLOCK_Y;    // fourth Y row in same warp
+            float conv_local[4][4][5];
 
-            int lz2 = lz + BLOCK_Z;      // second Z row in same warp
-            int lz3 = lz + 2*BLOCK_Z;    // third Z row in same warp
-            int lz4 = lz + 3*BLOCK_Z;    // fourth Z row in same warp
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = lz + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
 
-            float *dst; // pointer to write xconv results
+                for (int dy = 0; dy < 4; ++dy) {
+                    int ly_cur = ly + dy * BLOCK_Y;
+                    if (ly_cur >= CONV_YX) break;
 
-            float xconv[5], xconv_y2[5], xconv_y3[5], xconv_y4[5], xconv_z2[5], xconv_z3[5], xconv_z4[5];
-
-            accumulate_xaxis(sTile, lz, ly, lx, xconv);
-            
-            // Handle second and third y pass (here due to smaller block size, it always happens)
-            accumulate_xaxis(sTile, lz, ly2, lx, xconv_y2);
-            accumulate_xaxis(sTile, lz, ly3, lx, xconv_y3);
-            // Possibly handle fourth Y row in same warp
-            if (ly4 < CONV_Y) {
-                accumulate_xaxis(sTile, lz, ly4, lx, xconv_y4);
+                    accumulate_xaxis(sTile, lz_cur, ly_cur, lx, conv_local[dz][dy]);
+                }
             }
 
-            // Handle second and third Z row in same warp
-            accumulate_xaxis(sTile, lz2, ly, lx, xconv_z2);
-            accumulate_xaxis(sTile, lz3, ly, lx, xconv_z3);
-            // Possibly handle fourth Z row in same warp
-            if (lz4 < CONV_Z) {
-                accumulate_xaxis(sTile, lz4, ly, lx, xconv_z4);
-            }
 
             block.sync();
 
-            // Overwrite sTile with xconv from X axis pass
-            dst = &sTile[xconv_idx(lz,ly,threadIdx.x, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv[i];
-            
-            dst = &sTile[xconv_idx(lz,ly2,threadIdx.x, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv_y2[i];
+            // Overwrite sTile with conv from X axis pass
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = lz + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
 
-            dst = &sTile[xconv_idx(lz,ly3,threadIdx.x, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv_y3[i];
+                for (int dy = 0; dy < 4; ++dy) {
+                    int ly_cur = ly + dy * BLOCK_Y;
+                    if (ly_cur >= CONV_YX) break;
 
-            if (ly4 < CONV_Y) {
-                dst = &sTile[xconv_idx(lz,ly4,threadIdx.x, 0)];
-                #pragma unroll 
-                for (int i = 0; i < 5; ++i) dst[i] = xconv_y4[i];
-            }
-
-            dst = &sTile[xconv_idx(lz2,ly,threadIdx.x, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv_z2[i];
-
-            dst = &sTile[xconv_idx(lz3,ly,threadIdx.x, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv_z3[i];
-
-            if (lz4 < CONV_Z) {
-                dst = &sTile[xconv_idx(lz4,ly,threadIdx.x, 0)];
-                #pragma unroll 
-                for (int i = 0; i < 5; ++i) dst[i] = xconv_z4[i];
+                    float* dst = &sTile[conv_idx_YX(lz_cur, ly_cur, threadIdx.x, 0)];
+                    #pragma unroll
+                    for (int i = 0; i < 5; ++i) {
+                        dst[i] = conv_local[dz][dy][i];
+                    }
+                }
             }
             
             
@@ -286,36 +260,27 @@ __global__ void fusedssim3dCUDA(
             ly = threadIdx.y + HALO;
             lx = threadIdx.x; 
 
-            accumulate_yaxis(sTile, lz, ly, lx, xconv);
-
-            // Handle second and third Z row in same warp
-            accumulate_yaxis(sTile, lz2, ly, lx, xconv_z2);
-            accumulate_yaxis(sTile, lz3, ly, lx, xconv_z3);
-            // Possibly handle fourth Z row in same warp
-            if (lz4 < CONV_Z) {
-                accumulate_yaxis(sTile, lz4, ly, lx, xconv_z4);
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = threadIdx.z + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
+                accumulate_yaxis(sTile, lz_cur, ly, lx, conv_local[dz][0]);
             }
 
             block.sync();
 
-            // Overwrite sTile with xconv from Y axis pass
+            // Overwrite sTile with conv from Y axis pass
             
-            dst = &sTile[xconv_idx(lz,threadIdx.y,lx, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv[i];
-
-            dst = &sTile[xconv_idx(lz2,threadIdx.y,lx, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv_z2[i];
-
-            dst = &sTile[xconv_idx(lz3,threadIdx.y,lx, 0)];
-            #pragma unroll 
-            for (int i = 0; i < 5; ++i) dst[i] = xconv_z3[i];
-         
-            if (lz4 < CONV_Z) {
-                dst = &sTile[xconv_idx(lz4,threadIdx.y,lx, 0)];
-                #pragma unroll 
-                for (int i = 0; i < 5; ++i) dst[i] = xconv_z4[i];
+            // write results for each z-plane
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = threadIdx.z + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
+                
+                // We need to keep using ly due to the definition of conv_idx, using extended Y axis size
+                float* dst = &sTile[conv_idx_YZ(lz_cur, threadIdx.y, lx, 0)]; 
+                #pragma unroll
+                for (int i = 0; i < 5; ++i) {
+                    dst[i] = conv_local[dz][0][i];
+                }
             }
             
             block.sync();
@@ -327,40 +292,40 @@ __global__ void fusedssim3dCUDA(
             lz = threadIdx.z + HALO;
             ly = threadIdx.y;
             // lx = threadIdx.x;
-            xconv[0] = xconv[1] = xconv[2] = xconv[3] = xconv[4] = 0.f;
+            conv_local[0][0][0] = conv_local[0][0][1] = conv_local[0][0][2] = conv_local[0][0][3] = conv_local[0][0][4] = 0.f;
 
 #pragma unroll
             for (int d = 1; d <= HALO; ++d) {
                 float w = cGauss[HALO - d];
-                float* top = &sTile[xconv_idx(lz - d, ly, lx, 0)];
-                float* bot = &sTile[xconv_idx(lz + d, ly, lx, 0)];
+                float* top = &sTile[conv_idx_YZ(lz - d, ly, lx, 0)];
+                float* bot = &sTile[conv_idx_YZ(lz + d, ly, lx, 0)];
 
-                xconv[0] += (top[0] + bot[0]) * w;
-                xconv[1] += (top[1] + bot[1]) * w;
-                xconv[2] += (top[2] + bot[2]) * w;
-                xconv[3] += (top[3] + bot[3]) * w;
-                xconv[4] += (top[4] + bot[4]) * w;
+                conv_local[0][0][0] += (top[0] + bot[0]) * w;
+                conv_local[0][0][1] += (top[1] + bot[1]) * w;
+                conv_local[0][0][2] += (top[2] + bot[2]) * w;
+                conv_local[0][0][3] += (top[3] + bot[3]) * w;
+                conv_local[0][0][4] += (top[4] + bot[4]) * w;
             }
             // center
             {
                 float wC = cGauss[HALO];
-                float* ctr = &sTile[xconv_idx(lz, ly, lx, 0)];
-                xconv[0] += ctr[0] * wC;
-                xconv[1] += ctr[1] * wC;
-                xconv[2] += ctr[2] * wC;
-                xconv[3] += ctr[3] * wC;
-                xconv[4] += ctr[4] * wC;
+                float* ctr = &sTile[conv_idx_YZ(lz, ly, lx, 0)];
+                conv_local[0][0][0] += ctr[0] * wC;
+                conv_local[0][0][1] += ctr[1] * wC;
+                conv_local[0][0][2] += ctr[2] * wC;
+                conv_local[0][0][3] += ctr[3] * wC;
+                conv_local[0][0][4] += ctr[4] * wC;
             }
 
             if (pix_x < W && pix_y < H && pix_z < D) {
-                float mu1 = xconv[0];
-                float mu2 = xconv[2];
+                float mu1 = conv_local[0][0][0];
+                float mu2 = conv_local[0][0][2];
                 float mu1_sq = mu1 * mu1;
                 float mu2_sq = mu2 * mu2;
 
-                float sigma1_sq = xconv[1] - mu1_sq;
-                float sigma2_sq = xconv[3] - mu2_sq;
-                float sigma12   = xconv[4] - mu1 * mu2;
+                float sigma1_sq = conv_local[0][0][1] - mu1_sq;
+                float sigma2_sq = conv_local[0][0][3] - mu2_sq;
+                float sigma12   = conv_local[0][0][4] - mu1 * mu2;
 
                 float A = mu1_sq + mu2_sq + C1;
                 float B = sigma1_sq + sigma2_sq + C2;
@@ -398,8 +363,12 @@ __device__ __forceinline__ int sdata_idx(int stat, int z, int y, int x) {
     return (stat * SHARED_Z * SHARED_Y * SHARED_X) + (z * SHARED_Y * SHARED_X) + (y * SHARED_X) + x;
 }
 
-__device__ __forceinline__ int scratch_idx(int z, int y, int x, int stat) {
-    return (((z * CONV_Y) + y) * CONV_X + x) * 3 + stat;
+__device__ __forceinline__ int scratch_idx_YX(int z, int y, int x, int stat) {
+    return (((z * CONV_YX) + y) * CONV_X + x) * 3 + stat;
+}
+
+__device__ __forceinline__ int scratch_idx_YZ(int z, int y, int x, int stat) {
+    return (((z * CONV_YZ) + y) * CONV_X + x) * 3 + stat;
 }
 
 __device__ __forceinline__ void accumulate_xaxis_back(
@@ -442,14 +411,14 @@ __device__ __forceinline__ void accumulate_yaxis_back(
 #pragma unroll
     for (int d = 1; d <= HALO; ++d) {
         float w = cGauss[HALO - d];
-        float* top0 = &sData[scratch_idx(lz, ly - d, lx, 0)];
-        float* bot0 = &sData[scratch_idx(lz, ly + d, lx, 0)];
+        float* top0 = &sData[scratch_idx_YX(lz, ly - d, lx, 0)];
+        float* bot0 = &sData[scratch_idx_YX(lz, ly + d, lx, 0)];
 
         out[0] += (top0[0] + bot0[0]) * w;
         out[1] += (top0[1] + bot0[1]) * w;
         out[2] += (top0[2] + bot0[2]) * w;
     }   
-        float* center = &sData[scratch_idx(lz, ly, lx, 0)];
+        float* center = &sData[scratch_idx_YX(lz, ly, lx, 0)];
         float wc = cGauss[HALO];
         out[0]  += center[0] * wc;
         out[1] += center[1] * wc;
@@ -543,65 +512,38 @@ __global__ void fusedssim_backward3dCUDA(
             int ly = threadIdx.y;
             int lx = threadIdx.x + HALO;
             
-            
-            int ly2 = ly + BLOCK_Y;      // second Y row in same warp
-            int ly3 = ly + 2*BLOCK_Y;    // third Y row in same warp
-            int ly4 = ly + 3*BLOCK_Y;    // fourth Y row in same warp
+            float scratch_local[4][4][3];
 
-            int lz2 = lz + BLOCK_Z;      // second Z row in same warp
-            int lz3 = lz + 2*BLOCK_Z;    // third Z row in same warp
-            int lz4 = lz + 3*BLOCK_Z;    // fourth Z row in same warp
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = lz + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
 
-            float *dst; // pointer to write sScratch results
+                for (int dy = 0; dy < 4; ++dy) {
+                    int ly_cur = ly + dy * BLOCK_Y;
+                    if (ly_cur >= CONV_YX) break;
 
-            float sScratch[3], sScratch_y2[3], sScratch_y3[3], sScratch_y4[3], sScratch_z2[3], sScratch_z3[3], sScratch_z4[3];
-
-            accumulate_xaxis_back(sData, lz, ly, lx, sScratch);
-            // Handle second and third y pass (here due to smaller block size, it always happens)
-            accumulate_xaxis_back(sData, lz, ly2, lx, sScratch_y2);
-            accumulate_xaxis_back(sData, lz, ly3, lx, sScratch_y3);
-            // Possibly handle fourth Y row in same warp
-            if (ly4 < CONV_Y) {
-                accumulate_xaxis_back(sData, lz, ly4, lx, sScratch_y4);
-            }
-            // Handle second and third Z row in same warp
-            accumulate_xaxis_back(sData, lz2, ly, lx, sScratch_z2);
-            accumulate_xaxis_back(sData, lz3, ly, lx, sScratch_z3);
-            // Possibly handle fourth Z row in same warp
-            if (lz4 < CONV_Z) {
-                accumulate_xaxis_back(sData, lz4, ly, lx, sScratch_z4);
+                    accumulate_xaxis_back(sData, lz_cur, ly_cur, lx, scratch_local[dz][dy]);
+                }
             }
 
             block.sync();
 
-            // Overwrite sData with X axis pass sScratch results
+            // Overwrite sData with X axis pass scratch_local results
 
-            dst = &sData[scratch_idx(lz,ly,threadIdx.x, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch[i];
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = lz + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
 
-            dst = &sData[scratch_idx(lz,ly2,threadIdx.x, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch_y2[i];
-            dst = &sData[scratch_idx(lz,ly3,threadIdx.x, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch_y3[i];
-            if (ly4 < CONV_Y) {
-                dst = &sData[scratch_idx(lz,ly4,threadIdx.x, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_y4[i];
-            }
+                for (int dy = 0; dy < 4; ++dy) {
+                    int ly_cur = ly + dy * BLOCK_Y;
+                    if (ly_cur >= CONV_YX) break;
 
-            dst = &sData[scratch_idx(lz2,ly,threadIdx.x, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z2[i];
-            dst = &sData[scratch_idx(lz3,ly,threadIdx.x, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z3[i];
-            if (lz4 < CONV_Z) {
-                dst = &sData[scratch_idx(lz4,ly,threadIdx.x, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z4[i];
+                    float* dst = &sData[scratch_idx_YX(lz_cur, ly_cur, threadIdx.x, 0)];
+                    #pragma unroll
+                    for (int i = 0; i < 3; ++i) {
+                        dst[i] = scratch_local[dz][dy][i];
+                    }
+                }
             }
 
             block.sync();
@@ -612,32 +554,24 @@ __global__ void fusedssim_backward3dCUDA(
             ly = threadIdx.y + HALO;
             lx = threadIdx.x; 
 
-            accumulate_yaxis_back(sData, lz, ly, lx, sScratch);
-            // Handle second and third Z row in same warp
-            accumulate_yaxis_back(sData, lz2, ly, lx, sScratch_z2);
-            accumulate_yaxis_back(sData, lz3, ly, lx, sScratch_z3);
-            // Possibly handle fourth Z row in same warp
-            if (lz4 < CONV_Z) {
-                accumulate_yaxis_back(sData, lz4, ly, lx, sScratch_z4);
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = threadIdx.z + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
+                accumulate_yaxis_back(sData, lz_cur, ly, lx, scratch_local[dz][0]);
             }
 
             block.sync();
 
-            // Overwrite sData with Y axis pass sScratch results
-            dst = &sData[scratch_idx(lz,threadIdx.y,lx, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch[i];
+            // Overwrite sData with Y axis pass scratch_local results
+            for (int dz = 0; dz < 4; ++dz) {
+                int lz_cur = threadIdx.z + dz * BLOCK_Z;
+                if (lz_cur >= CONV_Z) break;
 
-            dst = &sData[scratch_idx(lz2,threadIdx.y,lx, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z2[i];
-            dst = &sData[scratch_idx(lz3,threadIdx.y,lx, 0)];
-            #pragma unroll
-            for (int i = 0; i < 3; ++i) dst[i] = sScratch_z3[i];
-            if (lz4 < CONV_Z) {
-                dst = &sData[scratch_idx(lz4,threadIdx.y,lx, 0)];
+                float* dst = &sData[scratch_idx_YZ(lz_cur, threadIdx.y, lx, 0)];
                 #pragma unroll
-                for (int i = 0; i < 3; ++i) dst[i] = sScratch_z4[i];
+                for (int i = 0; i < 3; ++i) {
+                    dst[i] = scratch_local[dz][0][i];
+                }
             }
 
             block.sync();
@@ -654,8 +588,8 @@ __global__ void fusedssim_backward3dCUDA(
     #pragma unroll
                 for (int d = 1; d <= HALO; ++d) {
                     float w = cGauss[HALO - d];
-                    float* top = &sData[scratch_idx(lz - d, ly, lx, 0)];
-                    float* bot = &sData[scratch_idx(lz + d, ly, lx, 0)];
+                    float* top = &sData[scratch_idx_YZ(lz - d, ly, lx, 0)];
+                    float* bot = &sData[scratch_idx_YZ(lz + d, ly, lx, 0)];
 
                     sum0 += (top[0] + bot[0]) * w;
                     sum1 += (top[1] + bot[1]) * w;
@@ -664,7 +598,7 @@ __global__ void fusedssim_backward3dCUDA(
                 // center
                 {
                     float wc = cGauss[HALO];
-                    float* ctr = &sData[scratch_idx(lz, ly, lx, 0)];
+                    float* ctr = &sData[scratch_idx_YZ(lz, ly, lx, 0)];
                     sum0 += ctr[0] * wc;
                     sum1 += ctr[1] * wc;
                     sum2 += ctr[2] * wc;
