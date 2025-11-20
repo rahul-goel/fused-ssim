@@ -44,9 +44,9 @@ def configure_cuda():
             compiler_args["nvcc"].extend(fallback_archs)
             detected_arch = "multiple architectures"
 
-    return CUDAExtension, "ssim3d.cu", "fused_ssim3d_cuda", compiler_args, [], detected_arch
+    return compiler_args, detected_arch
 
-extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
+compiler_args, detected_arch = configure_cuda()
 
 # Create a custom class that prints the architecture information
 class CustomBuildExtension(BuildExtension):
@@ -67,14 +67,14 @@ setup(
     name="fused_ssim3d",
     packages=['fused_ssim3d'],
     ext_modules=[
-        extension_type(
+        CUDAExtension(
             name="fused_ssim3d_cuda",
             sources=[
                 "ssim2d.cu",
                 "ssim3d.cu",
                 "ext.cpp"],
             extra_compile_args=compiler_args,
-            extra_link_args=link_args
+            extra_link_args=[]
         )
     ],
     cmdclass={
@@ -84,11 +84,11 @@ setup(
 
 # Print again at the end of setup.py execution
 if "nvcc" in compiler_args:
-    final_msg = "Setup completed. NVCC args: {}. CXX args: {}. Link args: {}.".format(
-        compiler_args["nvcc"], compiler_args["cxx"], link_args
+    final_msg = "Setup completed. NVCC args: {}. CXX args: {}.".format(
+        compiler_args["nvcc"], compiler_args["cxx"]
     )
 else:
-    final_msg = "Setup completed. CXX args: {}. Link args: {}.".format(
-        compiler_args["cxx"], link_args
+    final_msg = "Setup completed. CXX args: {}.".format(
+        compiler_args["cxx"]
     )
 print(final_msg)

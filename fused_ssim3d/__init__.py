@@ -37,15 +37,15 @@ class FusedSSIMMap(torch.autograd.Function):
         dL_dmap = opt_grad
         if padding == "valid":
             dL_dmap = torch.zeros_like(img1)
-            if spatial_dims == 2:
+            if ctx.spatial_dims == 2:
                 dL_dmap[:, :, 5:-5, 5:-5] = opt_grad
-            elif spatial_dims == 3:
+            elif ctx.spatial_dims == 3:
                 dL_dmap[:, :, 5:-5, 5:-5, 5:-5] = opt_grad
         if ctx.spatial_dims == 2:
             grad = fusedssim_backward2d(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
         elif ctx.spatial_dims == 3:
             grad = fusedssim_backward3d(C1, C2, img1, img2, dL_dmap, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
-        return None, None, grad, None, None, None
+        return None, None, grad, None, None, None, None
 
 def fused_ssim3d(img1, img2, padding="same", train=True):
     C1 = 0.01 ** 2

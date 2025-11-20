@@ -1,5 +1,5 @@
 import torch
-from fused_ssim import fused_ssim
+from fused_ssim3d import fused_ssim2d
 from pytorch_msssim import SSIM
 import matplotlib.pyplot as plt
 import numpy as np
@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
         begin = time.time()
         for _ in range(iterations):
-            mine_ssim_val_same = fused_ssim(img1_mine_same, img2_mine_same)
+            mine_ssim_val_same = fused_ssim2d(img1_mine_same, img2_mine_same)
             mine_ssim_val_same.backward()
         fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
         end = time.time()
@@ -80,8 +80,8 @@ if __name__ == "__main__":
     plt.legend()
     plt.xlabel("Number of pixels (in millions).")
     plt.ylabel("Time for one training iteration (ms).")
-    plt.title(f"Training Benchmark on {gpu}.")
-    plt.savefig(os.path.join("..", "images", f"training_time-{gpu.lower().replace(' ', '-')}.png"), dpi=300)
+    plt.title(f"2D Training Benchmark on {gpu}.")
+    plt.savefig(os.path.join("..", "images", f"2D_training_time-{gpu.lower().replace(' ', '-')}.png"), dpi=300)
 
     data = {
         "pytorch_mssim": [],
@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
             begin = time.time()
             for _ in range(iterations):
-                mine_ssim_val_same = fused_ssim(img1_mine_same, img2_mine_same, train=False)
+                mine_ssim_val_same = fused_ssim2d(img1_mine_same, img2_mine_same, train=False)
             fused_ssim_module.synchronize()  # Ensure GPU operations complete before timing
             end = time.time()
             data["fused-ssim"].append((end - begin) / iterations * 1000)
@@ -122,5 +122,5 @@ if __name__ == "__main__":
     plt.legend()
     plt.xlabel("Number of pixels (in millions).")
     plt.ylabel("Time for one inference iteration (ms).")
-    plt.title(f"Inference Benchmark on {gpu}.")
-    plt.savefig(os.path.join("..", "images", f"inference_time-{gpu.lower().replace(' ', '-')}.png"), dpi=300)
+    plt.title(f"2D inference Benchmark on {gpu}.")
+    plt.savefig(os.path.join("..", "images", f"2D_inference_time-{gpu.lower().replace(' ', '-')}.png"), dpi=300)
