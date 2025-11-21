@@ -119,7 +119,7 @@ The performance of the 2D version is retained (see [here](https://github.com/rah
 <img src="./images/3D_training_time-nvidia-rtx-a5000.png" width="45%"> <img src="./images/3D_inference_time-nvidia-rtx-a5000.png" width="45%"> 
 
 ## BibTeX
-If you use this 3D fused SSIM implementation your research work, please cite both the original paper and this repository:
+If you use this 3D fused SSIM implementation in your work, please cite both the original paper and this repository:
 ```
 @misc{fusedssim3d2025,
     title        = {{3D} Fully Fused Differentiable {SSIM}},
