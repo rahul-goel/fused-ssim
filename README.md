@@ -2,13 +2,13 @@
 
 This repository contains an adaptation of [fused-ssim](https://github.com/rahul-goel/fused-ssim) for PyTorch that also supports 3D images. It is up to 8x faster in 2D and roughly 5x faster in 3D compared to the previous fastest implementation - [pytorch-msssim](https://github.com/VainF/pytorch-msssim). 
 
-The 3D implementation (```fused_ssim3d```) retains the same assumptions as 2D, following the original SSIM paper and (wherever possible) translating the optimizations to 3D. It is also possible to call the original 2D instance of fused-ssim (now under ```fused_ssim2d```).
+The 3D implementation (```fused_ssim3d```) retains the same assumptions as 2D, following the original SSIM paper and (wherever possible) translating the 2D optimizations to 3D. It is also possible to call the original 2D instance of fused-ssim (now under ```fused_ssim2d```).
 
 Check out the original [fused-ssim](https://github.com/rahul-goel/fused-ssim) repository for further background and details why this approach is faster. 
 
 ## Hardware Compatibility
 
-Only NVIDIA GPUs are supported. The support for the other hardware was not carried over from 2D fused-ssim as of now
+Only NVIDIA GPUs are supported. The support for the other hardware was not carried over from 2D fused-ssim as of now.
 
 - **NVIDIA GPUs** (CUDA).
 
@@ -46,7 +46,7 @@ pip install git+https://github.com/PaPieta/fused-ssim3D --no-build-isolation
 
 # Or clone and install locally
 git clone https://github.com/PaPieta/fused-ssim3D
-cd fused-ssim
+cd fused-ssim3D
 pip install . --no-build-isolation
 ```
 
