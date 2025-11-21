@@ -506,6 +506,10 @@ fusedssim(
     auto dm_dsigma1_sq = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
     auto dm_dsigma12   = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
 
+    // Get data pointers to contiguous tensors
+    float* img1_ptr = img1.contiguous().data_ptr<float>();
+    float* img2_ptr = img2.contiguous().data_ptr<float>();
+
     // Declare kernel launch parameters
     sycl::range<3> localRange{
         BLOCK_X, 
@@ -534,8 +538,8 @@ fusedssim(
             kernel
             (
                 H, W, CH, C1, C2,
-                img1.contiguous().data_ptr<float>(),
-                img2.contiguous().data_ptr<float>(),
+                img1_ptr,
+                img2_ptr,
                 ssim_map.data_ptr<float>(),
                 train ? dm_dmu1.data_ptr<float>()       : nullptr,
                 train ? dm_dsigma1_sq.data_ptr<float>() : nullptr,
@@ -572,6 +576,14 @@ fusedssim_backward(
     // Create output gradient tensor (empty for now)
     auto dL_dimg1 = torch::zeros_like(img1);
 
+    // Get data pointers to contiguous tensors
+    float* img1_ptr = img1.contiguous().data_ptr<float>();
+    float* img2_ptr = img2.contiguous().data_ptr<float>();
+    float* dL_dmap_ptr = dL_dmap.contiguous().data_ptr<float>();
+    float* dm_dmu1_ptr = dm_dmu1.contiguous().data_ptr<float>();
+    float* dm_dsigma1_sq_ptr = dm_dsigma1_sq.contiguous().data_ptr<float>();
+    float* dm_dsigma12_ptr = dm_dsigma12.contiguous().data_ptr<float>();
+
     // Declare kernel launch parameters
     sycl::range<3> localRange{
         BLOCK_X, 
@@ -600,13 +612,13 @@ fusedssim_backward(
             kernel
             (
                 H, W, CH, C1, C2,
-                img1.contiguous().data_ptr<float>(),
-                img2.contiguous().data_ptr<float>(),
-                dL_dmap.contiguous().data_ptr<float>(),
+                img1_ptr,
+                img2_ptr,
+                dL_dmap_ptr,
                 dL_dimg1.data_ptr<float>(),
-                dm_dmu1.contiguous().data_ptr<float>(),
-                dm_dsigma1_sq.contiguous().data_ptr<float>(),
-                dm_dsigma12.contiguous().data_ptr<float>(),
+                dm_dmu1_ptr,
+                dm_dsigma1_sq_ptr,
+                dm_dsigma12_ptr,
                 sData,
                 sScratch
             );
