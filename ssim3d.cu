@@ -477,28 +477,37 @@ __global__ void fusedssim_backward3dCUDA(
                 const int start_y = block.group_index().y * BLOCK_Y;
                 const int start_x = block.group_index().x * BLOCK_X;
 
-                int tid = threadIdx.z * blockDim.y * blockDim.x + threadIdx.y * blockDim.x + threadIdx.x;
-                int warp_id = tid / 32; //warp index within block
-                int lane_id = tid % 32; //lane index within warp
-                int totalThreads = BLOCK_X * BLOCK_Y * BLOCK_Z; //total threads per block
-                int num_warps = (totalThreads + 31) / 32;
-                
-                for (int depth = warp_id; depth < SHARED_Z; depth += num_warps) {
+                // Warp config
+                int tid      = threadIdx.z * blockDim.y * blockDim.x
+                            + threadIdx.y * blockDim.x
+                            + threadIdx.x;
+                int warp_id  = tid / 32;
+                int lane_id  = tid & 31;
+                int total_warps = (blockDim.x * blockDim.y * blockDim.z + 31) / 32;
+
+
+                // Per-warp loop: cover every yz plane of the haloed tile
+                for (int depth = warp_id; depth < SHARED_Z; depth += total_warps) {
                     int gz = start_z + depth - HALO;
-                    for (int row = 0; row < SHARED_Y; ++row) {
-                        int gy = start_y + row - HALO;
-                        for (int col = lane_id; col < SHARED_X; col += 32) {
-                            int gx = start_x + col - HALO;
 
-                            float chain = get_pix_value(dL_dmap,      b, c, gz, gy, gx, CH, H, W, D);
-                            float vmu   = get_pix_value(dm_dmu1,      b, c, gz, gy, gx, CH, H, W, D);
-                            float vs1   = get_pix_value(dm_dsigma1_sq,b, c, gz, gy, gx, CH, H, W, D);
-                            float vs12  = get_pix_value(dm_dsigma12,  b, c, gz, gy, gx, CH, H, W, D);
+                    // Flatten the (row,col) plane so we can stride by 32 lanes
+                    int plane_elems = SHARED_Y * SHARED_X;
+                    for (int idx = lane_id; idx < plane_elems; idx += 32) {
+                        int row = idx / SHARED_X;
+                        int col = idx - row * SHARED_X;
+                        int gy  = start_y + row - HALO;
+                        int gx  = start_x + col - HALO;
 
-                            sData[sdata_idx(0, depth, row, col)] = vmu  * chain;
-                            sData[sdata_idx(1, depth, row, col)] = vs1  * chain;
-                            sData[sdata_idx(2, depth, row, col)] = vs12 * chain;
-                        }
+                        // Load all four tensors once; each lane accesses consecutive x’s
+                        float chain = get_pix_value(dL_dmap,       b, c, gz, gy, gx, CH, H, W, D);
+                        float vmu   = get_pix_value(dm_dmu1,       b, c, gz, gy, gx, CH, H, W, D);
+                        float vs1   = get_pix_value(dm_dsigma1_sq, b, c, gz, gy, gx, CH, H, W, D);
+                        float vs12  = get_pix_value(dm_dsigma12,   b, c, gz, gy, gx, CH, H, W, D);
+
+                        int base = sdata_idx(0, depth, row, col);
+                        sData[base + 0 * SHARED_Z * SHARED_Y * SHARED_X] = vmu  * chain;
+                        sData[base + 1 * SHARED_Z * SHARED_Y * SHARED_X] = vs1  * chain;
+                        sData[base + 2 * SHARED_Z * SHARED_Y * SHARED_X] = vs12 * chain;
                     }
                 }
             }
