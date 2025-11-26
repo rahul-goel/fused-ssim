@@ -31,7 +31,7 @@ def configure_cuda():
         compiler_args["nvcc"].append("-ffast-math")
         detected_arch = "AMD GPU (ROCm/HIP)"
     else:
-        compiler_args["nvcc"].extend(("--maxrregcount=32", "--use_fast_math"))
+        compiler_args["nvcc"].extend(("--maxrregcount=32", "--use_fast_math", "-lineinfo"))
         try:
             device = torch.cuda.current_device()
             compute_capability = torch.cuda.get_device_capability(device)
