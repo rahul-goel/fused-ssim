@@ -113,8 +113,8 @@ if __name__ == "__main__":
         mine_ssim_val_valid = fused_ssim3d(img1_mine_valid, img2_mine_valid, "valid").double()
         pm_ssim_val = pm_ssim(img1_pm, img2_pm)
 
-        assert torch.allclose(og_ssim_val, mine_ssim_val_same, rtol=1e-6, atol=1e-4)
-        assert torch.allclose(mine_ssim_val_valid, pm_ssim_val, rtol=1e-6, atol=1e-5)
+        assert torch.allclose(og_ssim_val, mine_ssim_val_same, rtol=1e-6, atol=1e-8)
+        assert torch.allclose(mine_ssim_val_valid, pm_ssim_val, rtol=1e-6, atol=1e-8)
 
         og_ssim_val.backward()
         mine_ssim_val_same.backward()
@@ -125,13 +125,13 @@ if __name__ == "__main__":
             img1_og.grad,
             img1_mine_same.grad.to(dtype=img1_og.grad.dtype),
             rtol=1e-6,
-            atol=1e-4,
+            atol=1e-8,
         )
         assert torch.allclose(
             img1_mine_valid.grad.to(dtype=img1_pm.grad.dtype),
             img1_pm.grad,
             rtol=1e-6,
-            atol=1e-4,
+            atol=1e-8,
         )
 
     # Performance Benchmarks: Compare forward and backward pass timings

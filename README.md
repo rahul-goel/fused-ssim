@@ -1,8 +1,8 @@
 # 3D Fully Fused Differentiable SSIM
 
-This repository contains an adaptation of [fused-ssim](https://github.com/rahul-goel/fused-ssim) for PyTorch that also supports 3D images. It is up to 8x faster in 2D and roughly 5x faster in 3D compared to the previous fastest implementation - [pytorch-msssim](https://github.com/VainF/pytorch-msssim). 
+This repository contains an adaptation of [fused-ssim](https://github.com/rahul-goel/fused-ssim) for PyTorch that also supports 3D images. It is up to 8x faster in 2D and up to 11x faster in 3D compared to the previous fastest implementation - [pytorch-msssim](https://github.com/VainF/pytorch-msssim). 
 
-The 3D implementation (```fused_ssim3d```) retains the same assumptions as 2D, following the original SSIM paper and (wherever possible) translating the 2D optimizations to 3D. It is also possible to call the original 2D instance of fused-ssim (now under ```fused_ssim2d```).
+The 3D implementation (```fused_ssim3d```) retains the same assumptions as 2D, following the original SSIM paper and translating the 2D optimizations to 3D. It is also possible to call the original 2D instance of fused-ssim (now under ```fused_ssim2d```).
 
 Check out the original [fused-ssim](https://github.com/rahul-goel/fused-ssim) repository for further background and details why this approach is faster. 
 
@@ -105,16 +105,13 @@ with torch.no_grad():
 
 ## Constraints
 
-### 3D-specific
-- Due to the significantly increased number of operations (3 sets of 1D convolutions vs 2), and subsequent numerical errors, Fused-SSIM3D does not align with pytorch-msssim as well as Fused-SSIM (2D) did. Still, it returns SSIM scores that agree roughly up to 1e-5.
-
 ### Legacy
 - Currently, only one of the images is allowed to be differentiable i.e. only the first image can be `nn.Parameter`.
 - Images must be normalized to range `[0, 1]`.
 - Standard `11x11` convolutions supported.
 
 ## Performance
-The performance of the 2D version is retained (see [here](https://github.com/rahul-goel/fused-ssim/tree/main?tab=readme-ov-file#performance)). In 3D, reaching the same acceleration is constrained by the shared memory size, here 48KB. Still, Fused-SSIM3D is approximately 5x faster than [pytorch-msssim](https://github.com/VainF/pytorch-msssim).
+The performance of the 2D version is retained (see [here](https://github.com/rahul-goel/fused-ssim/tree/main?tab=readme-ov-file#performance)). In 3D we reach up to 11x acceleration, which can mostly be accredited to the poor performance of the baseline [pytorch-msssim](https://github.com/VainF/pytorch-msssim) in 3D. For the same number of pixels, ```fused_ssim3d``` is still slower than its 2D counterpart.
 
 <img src="./images/3D_training_time-nvidia-rtx-a5000.png" width="45%"> <img src="./images/3D_inference_time-nvidia-rtx-a5000.png" width="45%"> 
 
@@ -139,3 +136,14 @@ If you use this 3D fused SSIM implementation in your work, please cite both the 
     series = {SA '24}
 }
 ```
+
+## 3D Implementation details
+
+A natural extension of the 2D fused-ssim would be to load a 3D neighbourhood into shared memory (```sTile```). While on paper the fastest, this method is strongly limited by shared memory size constraints. It is possible to make it work by heavy reuse of the a single large array (see e.g [this kernel version](https://github.com/PaPieta/fused-ssim3D/blob/609a2f185be620cd4bda634b377c5c75f0af9b74/ssim3d.cu)), but the shared memory is still big enough to only enable a handful (often 1-3) blocks per SM, which in turn greatly affects latency hiding during memory access. With this approach, the acceleration was ~5x.
+
+An alternative approach is to:
+1. Perform 2D Gaussian convolutions on each slice (similarly to the ssim2d architecture),
+2. Save intermediate results to global memory
+3. Make each thread calculate the Z axis convolution and final SSIM along the whole Z row (depth).
+
+The last part is achieved by loading appropriate memory into a ring buffer. With each step, only a missing data point is loaded and the "center pixel" index adjusted.

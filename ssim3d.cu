@@ -26,20 +26,18 @@ __constant__ float cGauss[11] = {
 // ------------------------------------------
 // Block and Shared Memory Dimensions
 // ------------------------------------------
-#define BLOCK_X 8
-#define BLOCK_Y 4
-#define BLOCK_Z 4
+#define BLOCK_X 16
+#define BLOCK_Y 16
 #define HALO    5
 
 #define SHARED_X (BLOCK_X + 2 * HALO)
 #define SHARED_Y (BLOCK_Y + 2 * HALO)
-#define SHARED_Z (BLOCK_Z + 2 * HALO)
 
 // For partial results after horizontal pass
 #define CONV_X BLOCK_X
-#define CONV_YX SHARED_Y // Two are needed, for the X axis and Y axis passes
-#define CONV_YZ BLOCK_Y
-#define CONV_Z SHARED_Z 
+#define CONV_Y SHARED_Y
+
+#define WINDOW_LENGTH (2 * HALO + 1)
 
 // ------------------------------------------
 // Utility: Safe pixel fetch w/ zero padding
@@ -55,83 +53,68 @@ __device__ __forceinline__ float get_pix_value(
     return img[b * CH * H * W * D + c * H * W * D + z * H * W + y * W + x]; //ZYX ordering
 }
 
-// struct Xconv5 {
-//     float sumX;
-//     float sumX2;
-//     float sumY;
-//     float sumY2;
-//     float sumXY;
-// };
-
-__device__ __forceinline__ int tile_idx(int z, int y, int x, int channel) {
-    return ((((z * SHARED_Y) + y) * SHARED_X) + x) * 2 + channel;
-}
-
-__device__ __forceinline__ int conv_idx_YX(int z, int y, int x, int stat) {
-    return ((((z * CONV_YX) + y) * CONV_X) + x) * 5 + stat;
-}
-
-__device__ __forceinline__ int conv_idx_YZ(int z, int y, int x, int stat) {
-    return (((z * CONV_YZ) + y) * CONV_X + x) * 5 + stat;
-}
-
-__device__ __forceinline__ void accumulate_xaxis(
-    float* sTile,
-    int lz, int ly, int lx, float out[5]
+__device__ __forceinline__ void load_stat_window(
+    float* __restrict__ buf0,
+    float* __restrict__ buf1,
+    float* __restrict__ buf2,
+    float* __restrict__ buf3,
+    float* __restrict__ buf4,
+    int slot,
+    int abs_z,
+    bool inside,
+    const float* __restrict__ stat0,
+    const float* __restrict__ stat1,
+    const float* __restrict__ stat2,
+    const float* __restrict__ stat3,
+    const float* __restrict__ stat4,
+    size_t channel_base,
+    size_t plane_stride,
+    size_t pix_offset,
+    int D
 ) {
-    out[0] = out[1] = out[2] = out[3] = out[4] = 0.f;
-
-#pragma unroll
-    for (int d = 1; d <= HALO; ++d) {
-        float w = cGauss[HALO - d];
-        float Xleft  = sTile[tile_idx(lz, ly, lx - d, 0)];
-        float Yleft  = sTile[tile_idx(lz, ly, lx - d, 1)];
-        float Xright = sTile[tile_idx(lz, ly, lx + d, 0)];
-        float Yright = sTile[tile_idx(lz, ly, lx + d, 1)];
-
-        out[0]  += (Xleft + Xright) * w;
-        out[1] += ((Xleft * Xleft) + (Xright * Xright)) * w;
-        out[2]  += (Yleft + Yright) * w;
-        out[3] += ((Yleft * Yleft) + (Yright * Yright)) * w;
-        out[4] += ((Xleft * Yleft) + (Xright * Yright)) * w;
+    if (!inside || abs_z < 0 || abs_z >= D) {
+        buf0[slot] = 0.f;
+        buf1[slot] = 0.f;
+        buf2[slot] = 0.f;
+        buf3[slot] = 0.f;
+        buf4[slot] = 0.f;
+        return;
     }
-
-    float centerX = sTile[tile_idx(lz, ly, lx, 0)];
-    float centerY = sTile[tile_idx(lz, ly, lx, 1)];
-    float wc = cGauss[HALO];
-    out[0] += centerX * wc;
-    out[1] += (centerX * centerX) * wc;
-    out[2] += centerY * wc;
-    out[3] += (centerY * centerY) * wc;
-    out[4] += (centerX * centerY) * wc;
+    const size_t idx = channel_base + static_cast<size_t>(abs_z) * plane_stride + pix_offset;
+    buf0[slot] = stat0[idx];
+    buf1[slot] = stat1[idx];
+    buf2[slot] = stat2[idx];
+    buf3[slot] = stat3[idx];
+    buf4[slot] = stat4[idx];
 }
 
-__device__ __forceinline__ void accumulate_yaxis(
-    float* sTile,
-    int lz, int ly, int lx, float out[5]
+
+__device__ __forceinline__ void load_back_window(
+    float* __restrict__ buf0,
+    float* __restrict__ buf1,
+    float* __restrict__ buf2,
+    int slot,
+    int abs_z,
+    bool inside,
+    const float* __restrict__ stat0,
+    const float* __restrict__ stat1,
+    const float* __restrict__ stat2,
+    size_t channel_base,
+    size_t plane_stride,
+    size_t pix_offset,
+    int D
 ) {
-    out[0] = out[1] = out[2] = out[3] = out[4] = 0.f;
-#pragma unroll
-    for (int d = 1; d <= HALO; ++d) {
-        float w = cGauss[HALO - d];
-        float* top = &sTile[conv_idx_YX(lz, ly - d, lx,0)];
-        float* bot = &sTile[conv_idx_YX(lz, ly + d, lx,0)];
-
-        out[0] += (top[0] + bot[0]) * w;
-        out[1] += (top[1] + bot[1]) * w;
-        out[2] += (top[2] + bot[2]) * w;
-        out[3] += (top[3] + bot[3]) * w;
-        out[4] += (top[4] + bot[4]) * w;
-    }   
-        float* center = &sTile[conv_idx_YX(lz, ly, lx, 0)];
-        float wc = cGauss[HALO];
-        out[0] += center[0] * wc;
-        out[1] += center[1] * wc;
-        out[2] += center[2] * wc;
-        out[3] += center[3] * wc;
-        out[4] += center[4] * wc;
+    if (!inside || abs_z < 0 || abs_z >= D) {
+        buf0[slot] = 0.f;
+        buf1[slot] = 0.f;
+        buf2[slot] = 0.f;
+        return;
+    }
+    const size_t idx = channel_base + static_cast<size_t>(abs_z) * plane_stride + pix_offset;
+    buf0[slot] = stat0[idx];
+    buf1[slot] = stat1[idx];
+    buf2[slot] = stat2[idx];
 }
-
 
 
 
@@ -153,56 +136,65 @@ __global__ void fusedssim3dCUDA(
     float* __restrict__ ssim_map,
     float* __restrict__ dm_dmu1,
     float* __restrict__ dm_dsigma1_sq,
-    float* __restrict__ dm_dsigma12
+    float* __restrict__ dm_dsigma12,
+    float* __restrict__ xy_stats
 ) {
     auto block = cg::this_thread_block();
     // const int bIdx   = block.group_index().z;  // batch index
-    const int pix_z  = block.group_index().z * BLOCK_Z + block.thread_index().z;
+    const int bIdx = block.group_index().z;
+    if (bIdx >= B) {
+        return;
+    }
     const int pix_y  = block.group_index().y * BLOCK_Y + block.thread_index().y;
     const int pix_x  = block.group_index().x * BLOCK_X + block.thread_index().x;
-    const int pix_id = pix_z * W * H + pix_y * W + pix_x;
-    const int num_pix = H * W * D;
+    const bool inside = (pix_x < W) && (pix_y < H);
 
-    //Initialize one shared memory block to serve both the image and intermediate sums
-    __shared__ float sTile[CONV_Z * CONV_YX * CONV_X * 5]; //CONV len requirements are larger than SHARED len
+    const size_t plane_stride   = static_cast<size_t>(H) * static_cast<size_t>(W);
+    const size_t channel_stride = static_cast<size_t>(D) * plane_stride;
+    const size_t voxels_per_stat = static_cast<size_t>(B) * static_cast<size_t>(CH) * channel_stride;
 
-    // // Shared memory for the tile (img1, img2)
-    // __shared__ float sTile[SHARED_Y][SHARED_X][2];
-    // // After horizontal pass, store partial sums here
-    // // xconv[y][x] -> (sumX, sumX^2, sumY, sumY^2, sumXY)
-    // __shared__ float xconv[CONV_Y][CONV_X][5];
+    float* stat0 = xy_stats;
+    float* stat1 = xy_stats + voxels_per_stat;
+    float* stat2 = xy_stats + 2 * voxels_per_stat;
+    float* stat3 = xy_stats + 3 * voxels_per_stat;
+    float* stat4 = xy_stats + 4 * voxels_per_stat;
 
-    // Each block processes B x C sub-batches. We loop over batches and channels:
-    for (int b = 0; b < B; ++b) {
-        for (int c = 0; c < CH; ++c) {
+    const size_t bc_base   = (static_cast<size_t>(bIdx) * static_cast<size_t>(CH)) * channel_stride;
+    const size_t pix_offset = inside ? (static_cast<size_t>(pix_y) * static_cast<size_t>(W) + pix_x) : size_t(0);
+
+    // Shared memory for the tile (img1, img2)
+    __shared__ float sTile[SHARED_Y][SHARED_X][2];
+    // After horizontal pass, store partial sums here
+    // conv[y][x] -> (sumX, sumX^2, sumY, sumY^2, sumXY)
+    __shared__ float conv[CONV_Y][CONV_X][5];
+
+    for (int c = 0; c < CH; ++c) {
+        const size_t channel_base = bc_base + static_cast<size_t>(c) * channel_stride;
+        for (int z = 0; z < D; ++z) {
             // ------------------------------------------------------------
             // 1) Load (img1, img2) tile + halo into shared memory
             // ------------------------------------------------------------
             {
-                const int tileSize = SHARED_Z * SHARED_Y * SHARED_X;
-                const int threads = BLOCK_Z * BLOCK_Y * BLOCK_X;
+                const int tileSize = SHARED_Y * SHARED_X;
+                const int threads = BLOCK_X * BLOCK_Y;
                 const int steps = (tileSize + threads - 1) / threads;
-                
-                const int tileStartZ = block.group_index().z * BLOCK_Z;
+
                 const int tileStartY = block.group_index().y * BLOCK_Y;
                 const int tileStartX = block.group_index().x * BLOCK_X;
 
                 for (int s = 0; s < steps; ++s) {
                     int tid = s * threads + block.thread_rank(); //thread id
                     if (tid < tileSize) {
-                        int local_z = tid / (SHARED_Y * SHARED_X);
-                        int rem = tid % (SHARED_Y * SHARED_X);
-                        int local_y = rem / SHARED_X;
-                        int local_x = rem % SHARED_X;
-                        int gz = tileStartZ + local_z - HALO;
+                        int local_y = tid / SHARED_X;
+                        int local_x = tid % SHARED_X;
                         int gy = tileStartY + local_y - HALO;
                         int gx = tileStartX + local_x - HALO;
 
-                        float X = get_pix_value(img1, b, c, gz, gy, gx, CH, H, W, D);
-                        float Y = get_pix_value(img2, b, c, gz, gy, gx, CH, H, W, D);
+                        float X = get_pix_value(img1, bIdx, c, z, gy, gx, CH, H, W, D);
+                        float Y = get_pix_value(img2, bIdx, c, z, gy, gx, CH, H, W, D);
 
-                        sTile[tile_idx(local_z, local_y, local_x, 0)] = X;
-                        sTile[tile_idx(local_z, local_y, local_x, 1)] = Y;
+                        sTile[local_y][local_x][0] = X;
+                        sTile[local_y][local_x][1] = Y;
                     }
                 }
             }
@@ -213,118 +205,193 @@ __global__ void fusedssim3dCUDA(
             //    We'll accumulate symmetrical pairs around center.
             // ------------------------------------------------------------
              
-            int lz = threadIdx.z;
+            
             int ly = threadIdx.y;
             int lx = threadIdx.x + HALO;  // skip left halo
 
-            float conv_local[4][4][5];
+            float sumX   = 0.f;
+            float sumX2  = 0.f;
+            float sumY   = 0.f;
+            float sumY2  = 0.f;
+            float sumXY  = 0.f;
 
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = lz + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
+            // #pragma unroll for those 5 pairs
+#pragma unroll
+            for (int d = 1; d <= HALO; ++d) {
+                float w = cGauss[HALO - d];
+                float Xleft  = sTile[ly][lx - d][0];
+                float Yleft  = sTile[ly][lx - d][1];
+                float Xright = sTile[ly][lx + d][0];
+                float Yright = sTile[ly][lx + d][1];
 
-                for (int dy = 0; dy < 4; ++dy) {
-                    int ly_cur = ly + dy * BLOCK_Y;
-                    if (ly_cur >= CONV_YX) break;
-
-                    accumulate_xaxis(sTile, lz_cur, ly_cur, lx, conv_local[dz][dy]);
-                }
+                sumX  += (Xleft + Xright) * w;
+                sumX2 += ((Xleft * Xleft) + (Xright * Xright)) * w;
+                sumY  += (Yleft + Yright) * w;
+                sumY2 += ((Yleft * Yleft) + (Yright * Yright)) * w;
+                sumXY += ((Xleft * Yleft) + (Xright * Yright)) * w;
+            }
+            // center
+            {
+                float centerX = sTile[ly][lx][0];
+                float centerY = sTile[ly][lx][1];
+                float wc = cGauss[HALO];
+                sumX  += centerX * wc;
+                sumX2 += (centerX * centerX) * wc;
+                sumY  += centerY * wc;
+                sumY2 += (centerY * centerY) * wc;
+                sumXY += (centerX * centerY) * wc;
             }
 
+            // Write out partial sums
+            conv[ly][threadIdx.x][0] = sumX;
+            conv[ly][threadIdx.x][1] = sumX2;
+            conv[ly][threadIdx.x][2] = sumY;
+            conv[ly][threadIdx.x][3] = sumY2;
+            conv[ly][threadIdx.x][4] = sumXY;
 
-            block.sync();
+            // Possibly handle second row in same warp
+            int ly2 = ly + BLOCK_Y;
+            if (ly2 < CONV_Y) {
+                sumX   = 0.f; sumX2  = 0.f;
+                sumY   = 0.f; sumY2  = 0.f;
+                sumXY  = 0.f;
 
-            // Overwrite sTile with conv from X axis pass
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = lz + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
+#pragma unroll
+                for (int d = 1; d <= HALO; ++d) {
+                    float w = cGauss[HALO - d];
+                    float Xleft  = sTile[ly2][lx - d][0];
+                    float Yleft  = sTile[ly2][lx - d][1];
+                    float Xright = sTile[ly2][lx + d][0];
+                    float Yright = sTile[ly2][lx + d][1];
 
-                for (int dy = 0; dy < 4; ++dy) {
-                    int ly_cur = ly + dy * BLOCK_Y;
-                    if (ly_cur >= CONV_YX) break;
-
-                    float* dst = &sTile[conv_idx_YX(lz_cur, ly_cur, threadIdx.x, 0)];
-                    #pragma unroll
-                    for (int i = 0; i < 5; ++i) {
-                        dst[i] = conv_local[dz][dy][i];
-                    }
+                    sumX  += (Xleft + Xright) * w;
+                    sumX2 += ((Xleft * Xleft) + (Xright * Xright)) * w;
+                    sumY  += (Yleft + Yright) * w;
+                    sumY2 += ((Yleft * Yleft) + (Yright * Yright)) * w;
+                    sumXY += ((Xleft * Yleft) + (Xright * Yright)) * w;
                 }
+                // center
+                
+                float cx = sTile[ly2][lx][0];
+                float cy = sTile[ly2][lx][1];
+                float wc = cGauss[HALO];
+                sumX  += cx * wc;
+                sumX2 += (cx * cx) * wc;
+                sumY  += cy * wc;
+                sumY2 += (cy * cy) * wc;
+                sumXY += (cx * cy) * wc;
+                
+                conv[ly2][threadIdx.x][0] = sumX;
+                conv[ly2][threadIdx.x][1] = sumX2;
+                conv[ly2][threadIdx.x][2] = sumY;
+                conv[ly2][threadIdx.x][3] = sumY2;
+                conv[ly2][threadIdx.x][4] = sumXY;
             }
-            
             
             block.sync();
             // ------------------------------------------------------------
             // 3) Y axis convolution (1x11)
             // ------------------------------------------------------------   
-            // lz = threadIdx.z;
+            
             ly = threadIdx.y + HALO;
             lx = threadIdx.x; 
-
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = threadIdx.z + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
-                accumulate_yaxis(sTile, lz_cur, ly, lx, conv_local[dz][0]);
-            }
-
-            block.sync();
-
-            // Overwrite sTile with conv from Y axis pass
             
-            // write results for each z-plane
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = threadIdx.z + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
-                
-                float* dst = &sTile[conv_idx_YZ(lz_cur, threadIdx.y, lx, 0)]; 
-                #pragma unroll
-                for (int i = 0; i < 5; ++i) {
-                    dst[i] = conv_local[dz][0][i];
-                }
-            }
+            sumX = sumX2 = sumY = sumY2 = sumXY = 0.f;
             
-            block.sync();
-
-            // ------------------------------------------------------------
-            // 3) Z axis convolution (1x11) + final SSIM
-            // ------------------------------------------------------------
-            
-            lz = threadIdx.z + HALO;
-            ly = threadIdx.y;
-            // lx = threadIdx.x;
-            conv_local[0][0][0] = conv_local[0][0][1] = conv_local[0][0][2] = conv_local[0][0][3] = conv_local[0][0][4] = 0.f;
-
+            // #pragma unroll for those 5 pairs
 #pragma unroll
             for (int d = 1; d <= HALO; ++d) {
                 float w = cGauss[HALO - d];
-                float* top = &sTile[conv_idx_YZ(lz - d, ly, lx, 0)];
-                float* bot = &sTile[conv_idx_YZ(lz + d, ly, lx, 0)];
+                float* top = conv[ly - d][lx];
+                float* bot = conv[ly + d][lx];
 
-                conv_local[0][0][0] += (top[0] + bot[0]) * w;
-                conv_local[0][0][1] += (top[1] + bot[1]) * w;
-                conv_local[0][0][2] += (top[2] + bot[2]) * w;
-                conv_local[0][0][3] += (top[3] + bot[3]) * w;
-                conv_local[0][0][4] += (top[4] + bot[4]) * w;
-            }
-            // center
-            {
-                float wC = cGauss[HALO];
-                float* ctr = &sTile[conv_idx_YZ(lz, ly, lx, 0)];
-                conv_local[0][0][0] += ctr[0] * wC;
-                conv_local[0][0][1] += ctr[1] * wC;
-                conv_local[0][0][2] += ctr[2] * wC;
-                conv_local[0][0][3] += ctr[3] * wC;
-                conv_local[0][0][4] += ctr[4] * wC;
+                sumX += (top[0] + bot[0]) * w;
+                sumX2 += (top[1] + bot[1]) * w;
+                sumY += (top[2] + bot[2]) * w;
+                sumY2 += (top[3] + bot[3]) * w;
+                sumXY += (top[4] + bot[4]) * w;
             }
 
-            if (pix_x < W && pix_y < H && pix_z < D) {
-                float mu1 = conv_local[0][0][0];
-                float mu2 = conv_local[0][0][2];
+            float wC = cGauss[HALO];
+            float* ctr = conv[ly][lx];
+            sumX += ctr[0] * wC;
+            sumX2 += ctr[1] * wC;
+            sumY += ctr[2] * wC;
+            sumY2 += ctr[3] * wC;
+            sumXY += ctr[4] * wC;
+
+            if (inside) {
+                const size_t idx = channel_base + static_cast<size_t>(z) * plane_stride + pix_offset;
+                stat0[idx] = sumX;
+                stat1[idx] = sumX2;
+                stat2[idx] = sumY;
+                stat3[idx] = sumY2;
+                stat4[idx] = sumXY;
+            }
+            
+            block.sync();
+        }    
+        // ------------------------------------------------------------
+        // 3) Z axis convolution (1x11) + final SSIM
+        //    Performed using a ring buffer window in registers
+        // ------------------------------------------------------------
+
+        if (inside) {
+            // Keep a sliding 11-slice (WINDOW_LENGTH) window in registers for each statistic.
+            // `head` always points at the slot that represents the current absolute z plane in window,
+            // while newer/older planes wrap around the buffer via modulo arithmetic.
+            float ring0[WINDOW_LENGTH];
+            float ring1[WINDOW_LENGTH];
+            float ring2[WINDOW_LENGTH];
+            float ring3[WINDOW_LENGTH];
+            float ring4[WINDOW_LENGTH];
+            
+            int head = 0;
+            // Prime the buffers with values for z in [-HALO, HALO] so every iteration can
+            // assume the window is already centered on the current plane.
+            for (int offset = -HALO; offset <= HALO; ++offset) {
+                int slot = (head + offset + HALO) % WINDOW_LENGTH;
+                load_stat_window(
+                    ring0, ring1, ring2, ring3, ring4,
+                    slot,
+                    offset,
+                    inside,
+                    stat0, stat1, stat2, stat3, stat4,
+                    channel_base,
+                    plane_stride,
+                    pix_offset,
+                    D
+                );
+            }
+
+            for (int z = 0; z < D; ++z) {
+                float sum0 = 0.f;
+                float sum1 = 0.f;
+                float sum2 = 0.f;
+                float sum3 = 0.f;
+                float sum4 = 0.f;
+#pragma unroll
+                for (int d = -HALO; d <= HALO; ++d) {
+                    // Convert relative offset d into a ring slot: +HALO prevents negatives and
+                    // modulo WINDOW_LENGTH wraps us around the 11-element circular window.
+                    int slot = (head + d + HALO) % WINDOW_LENGTH;
+                    int ad = (d < 0) ? -d : d;
+                    float w = cGauss[HALO - ad];
+                    sum0 += ring0[slot] * w;
+                    sum1 += ring1[slot] * w;
+                    sum2 += ring2[slot] * w;
+                    sum3 += ring3[slot] * w;
+                    sum4 += ring4[slot] * w;
+                }
+
+                const size_t idx = channel_base + static_cast<size_t>(z) * plane_stride + pix_offset;
+                float mu1 = sum0;
+                float mu2 = sum2;
                 float mu1_sq = mu1 * mu1;
                 float mu2_sq = mu2 * mu2;
-
-                float sigma1_sq = conv_local[0][0][1] - mu1_sq;
-                float sigma2_sq = conv_local[0][0][3] - mu2_sq;
-                float sigma12   = conv_local[0][0][4] - mu1 * mu2;
+                float sigma1_sq = sum1 - mu1_sq;
+                float sigma2_sq = sum3 - mu2_sq;
+                float sigma12   = sum4 - mu1 * mu2;
 
                 float A = mu1_sq + mu2_sq + C1;
                 float B = sigma1_sq + sigma2_sq + C2;
@@ -332,12 +399,9 @@ __global__ void fusedssim3dCUDA(
                 float D_ = 2.f * sigma12 + C2;
 
                 float val = (C_ * D_) / (A * B);
-
-                int global_idx = b * CH * num_pix + c * num_pix + pix_id;
-                ssim_map[global_idx] = val;
+                ssim_map[idx] = val;
 
                 if (dm_dmu1) {
-                    // partial derivatives
                     float d_m_dmu1 = (
                         (mu2 * 2.f * D_) / (A * B)
                         - (mu2 * 2.f * C_) / (A * B)
@@ -346,91 +410,33 @@ __global__ void fusedssim3dCUDA(
                     );
                     float d_m_dsigma1_sq = (-C_ * D_) / (A * B * B);
                     float d_m_dsigma12   = (2.f * C_) / (A * B);
-
-                    dm_dmu1[global_idx]       = d_m_dmu1;
-                    dm_dsigma1_sq[global_idx] = d_m_dsigma1_sq;
-                    dm_dsigma12[global_idx]   = d_m_dsigma12;
+                    dm_dmu1[idx]       = d_m_dmu1;
+                    dm_dsigma1_sq[idx] = d_m_dsigma1_sq;
+                    dm_dsigma12[idx]   = d_m_dsigma12;
                 }
+
+                // Slide the window forward by one plane: advance `head` (new center),
+                // overwrite the slot that just wrapped around with the newly visible z+HALO+1.
+                head = (head + 1) % WINDOW_LENGTH;
+                int next_z = z + HALO + 1;
+                int slot_new = (head + WINDOW_LENGTH - 1) % WINDOW_LENGTH;
+                load_stat_window(
+                    ring0, ring1, ring2, ring3, ring4,
+                    slot_new,
+                    next_z,
+                    inside,
+                    stat0, stat1, stat2, stat3, stat4,
+                    channel_base,
+                    plane_stride,
+                    pix_offset,
+                    D
+                );
             }
-            
+        block.sync();
         }
     }
-
 }
 
-__device__ __forceinline__ int sdata_idx(int stat, int z, int y, int x) {
-    return (stat * SHARED_Z * SHARED_Y * SHARED_X) + (z * SHARED_Y * SHARED_X) + (y * SHARED_X) + x;
-}
-
-__device__ __forceinline__ int scratch_idx_YX(int z, int y, int x, int stat) {
-    return (((z * CONV_YX) + y) * CONV_X + x) * 3 + stat;
-}
-
-__device__ __forceinline__ int scratch_idx_YZ(int z, int y, int x, int stat) {
-    return (((z * CONV_YZ) + y) * CONV_X + x) * 3 + stat;
-}
-
-__device__ __forceinline__ void accumulate_xaxis_back(
-    float* sData,
-    int lz, int ly, int lx, float out[3]
-) {
-    out[0] = out[1] = out[2] = 0.f;
-#pragma unroll
-    for (int d = 1; d <= HALO; ++d) {
-        float w = cGauss[HALO - d];
-        float left0  = sData[sdata_idx(0, lz, ly, lx - d)];
-        float left1  = sData[sdata_idx(1, lz, ly, lx - d)];
-        float left2  = sData[sdata_idx(2, lz, ly, lx - d)];
-
-        float right0 = sData[sdata_idx(0, lz, ly, lx + d)];
-        float right1 = sData[sdata_idx(1, lz, ly, lx + d)];
-        float right2 = sData[sdata_idx(2, lz, ly, lx + d)];
-
-        out[0] += (left0 + right0) * w;
-        out[1] += (left1 + right1) * w;
-        out[2] += (left2 + right2) * w;
-    }
-    // center
-    {
-        float wc = cGauss[HALO];
-        float c0 = sData[sdata_idx(0, lz, ly, lx)];
-        float c1 = sData[sdata_idx(1, lz, ly, lx)];
-        float c2 = sData[sdata_idx(2, lz, ly, lx)];
-        out[0] += c0 * wc;
-        out[1] += c1 * wc;
-        out[2] += c2 * wc;
-    }
-}
-
-__device__ __forceinline__ void accumulate_yaxis_back(
-    float* sData,
-    int lz, int ly, int lx, float out[3]
-) {
-    out[0] = out[1] = out[2] = 0.f;
-#pragma unroll
-    for (int d = 1; d <= HALO; ++d) {
-        float w = cGauss[HALO - d];
-        float* top0 = &sData[scratch_idx_YX(lz, ly - d, lx, 0)];
-        float* bot0 = &sData[scratch_idx_YX(lz, ly + d, lx, 0)];
-
-        out[0] += (top0[0] + bot0[0]) * w;
-        out[1] += (top0[1] + bot0[1]) * w;
-        out[2] += (top0[2] + bot0[2]) * w;
-    }   
-        float* center = &sData[scratch_idx_YX(lz, ly, lx, 0)];
-        float wc = cGauss[HALO];
-        out[0]  += center[0] * wc;
-        out[1] += center[1] * wc;
-        out[2] += center[2] * wc;
-}
-
-
-// ------------------------------------------
-// Backward Kernel: Apply chain rule to get
-//    dL/d(img1) from partial derivatives
-//    (dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
-//    and dL/dmap (the gradient from above).
-// ------------------------------------------
 __global__ void fusedssim_backward3dCUDA(
     int H,
     int W,
@@ -445,70 +451,61 @@ __global__ void fusedssim_backward3dCUDA(
     float* __restrict__ dL_dimg1,
     const float* __restrict__ dm_dmu1,
     const float* __restrict__ dm_dsigma1_sq,
-    const float* __restrict__ dm_dsigma12
+    const float* __restrict__ dm_dsigma12,
+    float* __restrict__ yz_stats
 ) {
     auto block = cg::this_thread_block();
+    (void)C1;
+    (void)C2;
+    const int bIdx = block.group_index().z;
+    if (bIdx >= B) {
+        return;
+    }
 
-    const int pix_z  = block.group_index().z * BLOCK_Z + block.thread_index().z;
     const int pix_y  = block.group_index().y * BLOCK_Y + block.thread_index().y;
     const int pix_x  = block.group_index().x * BLOCK_X + block.thread_index().x;
-    const int pix_id = pix_z * W * H + pix_y * W + pix_x;
-    const int num_pix = H * W * D;
-    // const int bIdx   = block.group_index().z;
+    const bool inside = (pix_x < W) && (pix_y < H);
 
-    // Shared memory for the fused data:
-    // [0]: dm_dmu1*dL, [1]: dm_dsigma1_sq*dL, [2]: dm_dsigma12*dL
-    // __shared__ float sData[3][SHARED_Y][SHARED_X];
-    // __shared__ float sScratch[CONV_Y][CONV_X][3];
-    // Initialize one shared memory block to serve both the fused data and scratch
-    __shared__ float sData[3 * SHARED_Z * SHARED_Y * SHARED_X];
+    const size_t plane_stride   = static_cast<size_t>(H) * static_cast<size_t>(W);
+    const size_t channel_stride = static_cast<size_t>(D) * plane_stride;
+    const size_t voxels_per_stat = static_cast<size_t>(B) * static_cast<size_t>(CH) * channel_stride;
 
-    for (int b = 0; b < B; ++b) {
-        for (int c = 0; c < CH; ++c) {
-            float p1 = 0.f, p2 = 0.f;
-            if (pix_x < W && pix_y < H) {
-                p1 = get_pix_value(img1, b, c, pix_z, pix_y, pix_x, CH, H, W, D);
-                p2 = get_pix_value(img2, b, c, pix_z, pix_y, pix_x, CH, H, W, D);
-            }
+    float* stat0 = yz_stats;
+    float* stat1 = yz_stats + voxels_per_stat;
+    float* stat2 = yz_stats + 2 * voxels_per_stat;
 
-            // (1) Load + fuse multiplication
-            {   
-                const int start_z = block.group_index().z * BLOCK_Z;
-                const int start_y = block.group_index().y * BLOCK_Y;
-                const int start_x = block.group_index().x * BLOCK_X;
+    const size_t bc_base   = (static_cast<size_t>(bIdx) * static_cast<size_t>(CH)) * channel_stride;
+    const size_t pix_offset = inside ? (static_cast<size_t>(pix_y) * static_cast<size_t>(W) + pix_x) : size_t(0);
 
-                // Warp config
-                int tid      = threadIdx.z * blockDim.y * blockDim.x
-                            + threadIdx.y * blockDim.x
-                            + threadIdx.x;
-                int warp_id  = tid / 32;
-                int lane_id  = tid & 31;
-                int total_warps = (blockDim.x * blockDim.y * blockDim.z + 31) / 32;
+    __shared__ float sTile[SHARED_Y][SHARED_X][3];
+    __shared__ float conv[CONV_Y][CONV_X][3];
 
+    const int tileSize = SHARED_Y * SHARED_X;
+    const int threads = BLOCK_X * BLOCK_Y;
+    const int steps = (tileSize + threads - 1) / threads;
+    const int tileStartY = block.group_index().y * BLOCK_Y;
+    const int tileStartX = block.group_index().x * BLOCK_X;
 
-                // Per-warp loop: cover every yz plane of the haloed tile
-                for (int depth = warp_id; depth < SHARED_Z; depth += total_warps) {
-                    int gz = start_z + depth - HALO;
+    for (int c = 0; c < CH; ++c) {
+        const size_t channel_base = bc_base + static_cast<size_t>(c) * channel_stride;
 
-                    // Flatten the (row,col) plane so we can stride by 32 lanes
-                    int plane_elems = SHARED_Y * SHARED_X;
-                    for (int idx = lane_id; idx < plane_elems; idx += 32) {
-                        int row = idx / SHARED_X;
-                        int col = idx - row * SHARED_X;
-                        int gy  = start_y + row - HALO;
-                        int gx  = start_x + col - HALO;
+        for (int z = 0; z < D; ++z) {
+            for (int s = 0; s < steps; ++s) {
+                int tid = s * threads + block.thread_rank();
+                if (tid < tileSize) {
+                    int local_y = tid / SHARED_X;
+                    int local_x = tid % SHARED_X;
+                    int gy = tileStartY + local_y - HALO;
+                    int gx = tileStartX + local_x - HALO;
 
-                        // Load all four tensors once; each lane accesses consecutive x’s
-                        float chain = get_pix_value(dL_dmap,       b, c, gz, gy, gx, CH, H, W, D);
-                        float vmu   = get_pix_value(dm_dmu1,       b, c, gz, gy, gx, CH, H, W, D);
-                        float vs1   = get_pix_value(dm_dsigma1_sq, b, c, gz, gy, gx, CH, H, W, D);
-                        float vs12  = get_pix_value(dm_dsigma12,   b, c, gz, gy, gx, CH, H, W, D);
+                    float chain = get_pix_value(dL_dmap, bIdx, c, z, gy, gx, CH, H, W, D);
+                    float vmu   = get_pix_value(dm_dmu1, bIdx, c, z, gy, gx, CH, H, W, D);
+                    float vs1   = get_pix_value(dm_dsigma1_sq, bIdx, c, z, gy, gx, CH, H, W, D);
+                    float vs12  = get_pix_value(dm_dsigma12, bIdx, c, z, gy, gx, CH, H, W, D);
 
-                        int base = sdata_idx(0, depth, row, col);
-                        sData[base + 0 * SHARED_Z * SHARED_Y * SHARED_X] = vmu  * chain;
-                        sData[base + 1 * SHARED_Z * SHARED_Y * SHARED_X] = vs1  * chain;
-                        sData[base + 2 * SHARED_Z * SHARED_Y * SHARED_X] = vs12 * chain;
-                    }
+                    sTile[local_y][local_x][0] = vmu  * chain;
+                    sTile[local_y][local_x][1] = vs1  * chain;
+                    sTile[local_y][local_x][2] = vs12 * chain;
                 }
             }
             block.sync();
@@ -516,119 +513,179 @@ __global__ void fusedssim_backward3dCUDA(
             //------------------------------------------------------------
             // (2) X axis pass
             //------------------------------------------------------------
-            int lz = threadIdx.z;
+
             int ly = threadIdx.y;
             int lx = threadIdx.x + HALO;
-            
-            float scratch_local[4][4][3];
 
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = lz + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
+            float sum0 = 0.f;
+            float sum1 = 0.f;
+            float sum2 = 0.f;
 
-                for (int dy = 0; dy < 4; ++dy) {
-                    int ly_cur = ly + dy * BLOCK_Y;
-                    if (ly_cur >= CONV_YX) break;
+#pragma unroll
+            for (int d = 1; d <= HALO; ++d) {
+                float w = cGauss[HALO - d];
+                float left0  = sTile[ly][lx - d][0];
+                float left1  = sTile[ly][lx - d][1];
+                float left2  = sTile[ly][lx - d][2];
+                float right0 = sTile[ly][lx + d][0];
+                float right1 = sTile[ly][lx + d][1];
+                float right2 = sTile[ly][lx + d][2];
 
-                    accumulate_xaxis_back(sData, lz_cur, ly_cur, lx, scratch_local[dz][dy]);
-                }
+                sum0 += (left0 + right0) * w;
+                sum1 += (left1 + right1) * w;
+                sum2 += (left2 + right2) * w;
+            }
+            {
+                float wc = cGauss[HALO];
+                float c0 = sTile[ly][lx][0];
+                float c1 = sTile[ly][lx][1];
+                float c2 = sTile[ly][lx][2];
+                sum0 += c0 * wc;
+                sum1 += c1 * wc;
+                sum2 += c2 * wc;
             }
 
-            block.sync();
+            conv[ly][threadIdx.x][0] = sum0;
+            conv[ly][threadIdx.x][1] = sum1;
+            conv[ly][threadIdx.x][2] = sum2;
 
-            // Overwrite sData with X axis pass scratch_local results
+            int ly2 = ly + BLOCK_Y;
+            if (ly2 < CONV_Y) {
+                sum0 = sum1 = sum2 = 0.f;
+#pragma unroll
+                for (int d = 1; d <= HALO; ++d) {
+                    float w = cGauss[HALO - d];
+                    float left0  = sTile[ly2][lx - d][0];
+                    float left1  = sTile[ly2][lx - d][1];
+                    float left2  = sTile[ly2][lx - d][2];
+                    float right0 = sTile[ly2][lx + d][0];
+                    float right1 = sTile[ly2][lx + d][1];
+                    float right2 = sTile[ly2][lx + d][2];
 
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = lz + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
-
-                for (int dy = 0; dy < 4; ++dy) {
-                    int ly_cur = ly + dy * BLOCK_Y;
-                    if (ly_cur >= CONV_YX) break;
-
-                    float* dst = &sData[scratch_idx_YX(lz_cur, ly_cur, threadIdx.x, 0)];
-                    #pragma unroll
-                    for (int i = 0; i < 3; ++i) {
-                        dst[i] = scratch_local[dz][dy][i];
-                    }
+                    sum0 += (left0 + right0) * w;
+                    sum1 += (left1 + right1) * w;
+                    sum2 += (left2 + right2) * w;
                 }
-            }
+                float wc = cGauss[HALO];
+                float c0 = sTile[ly2][lx][0];
+                float c1 = sTile[ly2][lx][1];
+                float c2 = sTile[ly2][lx][2];
+                sum0 += c0 * wc;
+                sum1 += c1 * wc;
+                sum2 += c2 * wc;
 
+                conv[ly2][threadIdx.x][0] = sum0;
+                conv[ly2][threadIdx.x][1] = sum1;
+                conv[ly2][threadIdx.x][2] = sum2;
+            }
             block.sync();
 
             //----------------------------------------------------------
             // (2) Y axis pass
             //----------------------------------------------------------
+
             ly = threadIdx.y + HALO;
-            lx = threadIdx.x; 
+            lx = threadIdx.x;
 
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = threadIdx.z + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
-                accumulate_yaxis_back(sData, lz_cur, ly, lx, scratch_local[dz][0]);
+            float out0 = 0.f;
+            float out1 = 0.f;
+            float out2 = 0.f;
+#pragma unroll
+            for (int d = 1; d <= HALO; ++d) {
+                float w = cGauss[HALO - d];
+                float* top = conv[ly - d][lx];
+                float* bot = conv[ly + d][lx];
+
+                out0 += (top[0] + bot[0]) * w;
+                out1 += (top[1] + bot[1]) * w;
+                out2 += (top[2] + bot[2]) * w;
+            }
+            {
+                float wc = cGauss[HALO];
+                float* ctr = conv[ly][lx];
+                out0 += ctr[0] * wc;
+                out1 += ctr[1] * wc;
+                out2 += ctr[2] * wc;
             }
 
-            block.sync();
-
-            // Overwrite sData with Y axis pass scratch_local results
-            for (int dz = 0; dz < 4; ++dz) {
-                int lz_cur = threadIdx.z + dz * BLOCK_Z;
-                if (lz_cur >= CONV_Z) break;
-
-                float* dst = &sData[scratch_idx_YZ(lz_cur, threadIdx.y, lx, 0)];
-                #pragma unroll
-                for (int i = 0; i < 3; ++i) {
-                    dst[i] = scratch_local[dz][0][i];
-                }
-            }
-
-            block.sync();
-
-            //----------------------------------------------------------
-            // (3) Z axis pass -> finalize dL/d(img1)
-            //----------------------------------------------------------
-            if (pix_x < W && pix_y < H && pix_z < D) {
-                int lz = threadIdx.z + HALO;
-                int ly = threadIdx.y;
-
-                float sum0 = 0.f, sum1 = 0.f, sum2 = 0.f;
-
-    #pragma unroll
-                for (int d = 1; d <= HALO; ++d) {
-                    float w = cGauss[HALO - d];
-                    float* top = &sData[scratch_idx_YZ(lz - d, ly, lx, 0)];
-                    float* bot = &sData[scratch_idx_YZ(lz + d, ly, lx, 0)];
-
-                    sum0 += (top[0] + bot[0]) * w;
-                    sum1 += (top[1] + bot[1]) * w;
-                    sum2 += (top[2] + bot[2]) * w;
-                }
-                // center
-                {
-                    float wc = cGauss[HALO];
-                    float* ctr = &sData[scratch_idx_YZ(lz, ly, lx, 0)];
-                    sum0 += ctr[0] * wc;
-                    sum1 += ctr[1] * wc;
-                    sum2 += ctr[2] * wc;
-                }
-
-                // final accumulation
-                float dL_dpix = sum0 + (2.f * p1) * sum1 + (p2) * sum2;
-
-                int out_idx = b * CH * num_pix + c * num_pix + pix_id;
-                dL_dimg1[out_idx] = dL_dpix;
+            if (inside) {
+                const size_t idx = channel_base + static_cast<size_t>(z) * plane_stride + pix_offset;
+                stat0[idx] = out0;
+                stat1[idx] = out1;
+                stat2[idx] = out2;
             }
             block.sync();
         }
+
+        //----------------------------------------------------------
+        // (3) Z axis pass -> finalize dL/d(img1)
+        //----------------------------------------------------------
+
+        if (inside) {
+            // Same ring-buffer pattern as forward pass: each slot represents one z-slice of the
+            // yz-filtered statistics, and `head` points at the current absolute z location.
+            float ring0[WINDOW_LENGTH];
+            float ring1[WINDOW_LENGTH];
+            float ring2[WINDOW_LENGTH];
+            int head = 0;
+            // Preload the buffer so the loop can consume a fully populated window.
+            for (int offset = -HALO; offset <= HALO; ++offset) {
+                int slot = (head + offset + HALO) % WINDOW_LENGTH;
+                load_back_window(
+                    ring0, ring1, ring2,
+                    slot,
+                    offset,
+                    inside,
+                    stat0, stat1, stat2,
+                    channel_base,
+                    plane_stride,
+                    pix_offset,
+                    D
+                );
+            }
+
+            for (int z = 0; z < D; ++z) {
+                float sum0 = 0.f;
+                float sum1 = 0.f;
+                float sum2 = 0.f;
+#pragma unroll
+                for (int d = -HALO; d <= HALO; ++d) {
+                    // Map the relative offset d back to the physical slot that cached it.
+                    int slot = (head + d + HALO) % WINDOW_LENGTH;
+                    int ad = (d < 0) ? -d : d;
+                    float w = cGauss[HALO - ad];
+                    sum0 += ring0[slot] * w;
+                    sum1 += ring1[slot] * w;
+                    sum2 += ring2[slot] * w;
+                }
+
+                float p1 = get_pix_value(img1, bIdx, c, z, pix_y, pix_x, CH, H, W, D);
+                float p2 = get_pix_value(img2, bIdx, c, z, pix_y, pix_x, CH, H, W, D);
+                const size_t idx = channel_base + static_cast<size_t>(z) * plane_stride + pix_offset;
+                float dL_dpix = sum0 + (2.f * p1) * sum1 + (p2) * sum2;
+                dL_dimg1[idx] = dL_dpix;
+
+                // Rotate the buffers: advance head and load the next plane entering the window.
+                head = (head + 1) % WINDOW_LENGTH;
+                int next_z = z + HALO + 1;
+                int slot_new = (head + WINDOW_LENGTH - 1) % WINDOW_LENGTH;
+                load_back_window(
+                    ring0, ring1, ring2,
+                    slot_new,
+                    next_z,
+                    inside,
+                    stat0, stat1, stat2,
+                    channel_base,
+                    plane_stride,
+                    pix_offset,
+                    D
+                );
+            }
+        }
+        block.sync();
     }
 }
 
-
-// ------------------------------------------
-// PyTorch Interface (Forward)
-//   Returns (ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12).
-//   If train=false, derivative Tensors are empty.
-// ------------------------------------------
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 fusedssim3d(
     float C1,
@@ -644,11 +701,11 @@ fusedssim3d(
     int H  = img1.size(3);
     int W  = img1.size(4);
 
-    // Launch config
+    // Launch config: each block covers one XY tile and marches across depth
     dim3 grid((W + BLOCK_X - 1) / BLOCK_X,
               (H + BLOCK_Y - 1) / BLOCK_Y,
-              (D + BLOCK_Z - 1) / BLOCK_Z);
-    dim3 block(BLOCK_X, BLOCK_Y, BLOCK_Z);
+              B);
+    dim3 block(BLOCK_X, BLOCK_Y);
 
     // Output SSIM map
     auto ssim_map = torch::zeros_like(img1, img1.options()).contiguous();
@@ -658,6 +715,8 @@ fusedssim3d(
     auto dm_dsigma1_sq = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
     auto dm_dsigma12   = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
 
+    auto xy_workspace = torch::empty({5, B, CH, D, H, W}, img1.options()).contiguous();
+
     fusedssim3dCUDA<<<grid, block>>>(
         H, W, D, B, CH, C1, C2,
         img1.contiguous().data_ptr<float>(),
@@ -665,7 +724,8 @@ fusedssim3d(
         ssim_map.data_ptr<float>(),
         train ? dm_dmu1.data_ptr<float>()       : nullptr,
         train ? dm_dsigma1_sq.data_ptr<float>() : nullptr,
-        train ? dm_dsigma12.data_ptr<float>()   : nullptr
+        train ? dm_dsigma12.data_ptr<float>()   : nullptr,
+        xy_workspace.data_ptr<float>()
     );
 
     return std::make_tuple(ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12);
@@ -699,8 +759,10 @@ fusedssim_backward3d(
 
     dim3 grid((W + BLOCK_X - 1) / BLOCK_X,
               (H + BLOCK_Y - 1) / BLOCK_Y,
-              (D + BLOCK_Z - 1) / BLOCK_Z);
-    dim3 block(BLOCK_X, BLOCK_Y, BLOCK_Z);
+              B);
+    dim3 block(BLOCK_X, BLOCK_Y);
+
+    auto back_workspace = torch::empty({3, B, CH, D, H, W}, img1.options()).contiguous();
 
     fusedssim_backward3dCUDA<<<grid, block>>>(
         H, W, D, B, CH, C1, C2,
@@ -710,7 +772,8 @@ fusedssim_backward3d(
         dL_dimg1.data_ptr<float>(),
         dm_dmu1.contiguous().data_ptr<float>(),
         dm_dsigma1_sq.contiguous().data_ptr<float>(),
-        dm_dsigma12.contiguous().data_ptr<float>()
+        dm_dsigma12.contiguous().data_ptr<float>(),
+        back_workspace.data_ptr<float>()
     );
 
     return dL_dimg1;

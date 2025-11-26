@@ -72,7 +72,6 @@ setup(
             sources=[
                 "ssim2d.cu",
                 "ssim3d.cu",
-                "ssim3d_by_2d.cu",
                 "ext.cpp"],
             extra_compile_args=compiler_args,
             extra_link_args=[]
