@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel", "torch"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fused-fused_ssim3d"
+name = "fused_ssim3d"
 dynamic = ["ext_modules", "cmdclass"]
 version = "1.0.0"
 description = "Efficient fully-fused differentiable SSIM implementation with 3D support"
