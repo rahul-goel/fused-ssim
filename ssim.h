@@ -24,3 +24,26 @@ fusedssim_backward(
     torch::Tensor &dm_dsigma1_sq,
     torch::Tensor &dm_dsigma12
 );
+
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor>
+fusedl1ssim_loss(
+    float ssim_weight,
+    float C1,
+    float C2,
+    torch::Tensor &img1,
+    torch::Tensor &img2,
+    bool train
+);
+
+torch::Tensor
+fusedl1ssim_loss_backward(
+    float ssim_weight,
+    float C1,
+    float C2,
+    torch::Tensor &img1,
+    torch::Tensor &img2,
+    torch::Tensor &dL_dmap,
+    torch::Tensor &dm_dmu1,
+    torch::Tensor &dm_dsigma1_sq,
+    torch::Tensor &dm_dsigma12
+);
