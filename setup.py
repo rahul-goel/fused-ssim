@@ -101,7 +101,7 @@ if torch.cuda.is_available():
     extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
 elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
     extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_mps()
-elif hasattr(torch, 'xpu'):
+elif hasattr(torch, 'xpu') and torch.xpu.is_available():
     extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_xpu()
 else:
     extension_type, extension_file, build_name, compiler_args, link_args, detected_arch = configure_cuda()
