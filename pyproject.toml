@@ -3,20 +3,17 @@ requires = ["setuptools>=61.0", "wheel", "torch"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fused_ssim3d"
-dynamic = ["ext_modules", "cmdclass"]
+name = "fused-ssim"
 version = "1.0.0"
-description = "Efficient fully-fused differentiable SSIM implementation with 3D support"
+description = "Efficient fully-fused differentiable SSIM implementation"
 readme = "README.md"
 requires-python = ">=3.8"
-authors = [{name = "Pawel Tomasz Pieta"}]
+authors = [{name = "Rahul Goel"}]
 dependencies = ["torch>=2.0.0"]
-license = "MIT"
 
 [project.urls]
-Homepage = "https://github.com/PaPieta/fused-ssim3D"
-Repository = "https://github.com/PaPieta/fused-ssim3D/"
-Reference = "https://github.com/rahul-goel/fused-ssim"
+Homepage = "https://github.com/rahul-goel/fused-ssim"
+Repository = "https://github.com/rahul-goel/fused-ssim"
 
 [tool.setuptools]
-packages = ["fused_ssim3d"]
+packages = ["fused_ssim"]

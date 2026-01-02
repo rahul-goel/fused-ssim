@@ -6,5 +6,3 @@ __pycache__/
 *.hip
 *.so
 .python-version
-
-notebooks/

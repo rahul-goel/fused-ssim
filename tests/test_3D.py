@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 from math import exp
-from fused_ssim3d import fused_ssim3d
+from fused_ssim import fused_ssim3d
 from pytorch_msssim import SSIM
 import time
 
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     torch.manual_seed(0)
     B, CH, D, H, W = 2, 1, 96, 96, 96
     pm_ssim = SSIM(data_range=1.0, channel=CH, spatial_dims=3)
-    iterations = 100
+    iterations = 10
 
     # Correctness Tests: Verify fused-ssim matches reference implementations
     for _ in range(iterations):

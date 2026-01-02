@@ -59,7 +59,7 @@ __device__ __forceinline__ float get_pix_value(
 //  - Optionally writes partial derivatives
 //    to dm_dmu1, dm_dsigma1_sq, dm_dsigma12
 // ------------------------------------------
-__global__ void fusedssim2dCUDA(
+__global__ void fusedssimCUDA(
     int H,
     int W,
     int CH,
@@ -283,7 +283,7 @@ __global__ void fusedssim2dCUDA(
 //    (dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
 //    and dL/dmap (the gradient from above).
 // ------------------------------------------
-__global__ void fusedssim_backward2dCUDA(
+__global__ void fusedssim_backwardCUDA(
     int H,
     int W,
     int CH,
@@ -432,7 +432,7 @@ __global__ void fusedssim_backward2dCUDA(
 //   If train=false, derivative Tensors are empty.
 // ------------------------------------------
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
-fusedssim2d(
+fusedssim(
     float C1,
     float C2,
     torch::Tensor &img1,
@@ -459,7 +459,7 @@ fusedssim2d(
     auto dm_dsigma1_sq = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
     auto dm_dsigma12   = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
 
-    fusedssim2dCUDA<<<grid, block>>>(
+    fusedssimCUDA<<<grid, block>>>(
         H, W, CH, C1, C2,
         img1.contiguous().data_ptr<float>(),
         img2.contiguous().data_ptr<float>(),
@@ -479,7 +479,7 @@ fusedssim2d(
 //   returns dL/d(img1).
 // ------------------------------------------
 torch::Tensor
-fusedssim_backward2d(
+fusedssim_backward(
     float C1,
     float C2,
     torch::Tensor &img1,
@@ -502,7 +502,7 @@ fusedssim_backward2d(
               B);
     dim3 block(BLOCK_X, BLOCK_Y);
 
-    fusedssim_backward2dCUDA<<<grid, block>>>(
+    fusedssim_backwardCUDA<<<grid, block>>>(
         H, W, CH, C1, C2,
         img1.contiguous().data_ptr<float>(),
         img2.contiguous().data_ptr<float>(),
