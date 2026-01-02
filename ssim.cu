@@ -132,31 +132,18 @@ __global__ void fusedssimCUDA(
 
             // #pragma unroll for those 5 pairs
 #pragma unroll
-            for (int d = 1; d <= HALO; ++d) {
-                float w = cGauss[HALO - d];
-                float Xleft  = sTile[ly][lx - d][0];
-                float Yleft  = sTile[ly][lx - d][1];
-                float Xright = sTile[ly][lx + d][0];
-                float Yright = sTile[ly][lx + d][1];
+            for (int d = -HALO; d <= HALO; ++d) {
+                float w = cGauss[d + HALO];
+                float x = sTile[ly][lx + d][0];
+                float y = sTile[ly][lx + d][1];
 
-                sumX  += (Xleft + Xright) * w;
-                sumX2 += ((Xleft * Xleft) + (Xright * Xright)) * w;
-                sumY  += (Yleft + Yright) * w;
-                sumY2 += ((Yleft * Yleft) + (Yright * Yright)) * w;
-                sumXY += ((Xleft * Yleft) + (Xright * Yright)) * w;
+                sumX  += x * w;
+                sumX2 += (x * x) * w;
+                sumY  += y * w;
+                sumY2 += (y * y) * w;
+                sumXY += (x * y) * w;
             }
-            // center
-            {
-                float centerX = sTile[ly][lx][0];
-                float centerY = sTile[ly][lx][1];
-                float wc = cGauss[HALO];
-                sumX  += centerX * wc;
-                sumX2 += (centerX * centerX) * wc;
-                sumY  += centerY * wc;
-                sumY2 += (centerY * centerY) * wc;
-                sumXY += (centerX * centerY) * wc;
-            }
-
+           
             // Write out partial sums
             xconv[ly][threadIdx.x][0] = sumX;
             xconv[ly][threadIdx.x][1] = sumX2;
@@ -172,29 +159,16 @@ __global__ void fusedssimCUDA(
                 sumXY  = 0.f;
 
 #pragma unroll
-                for (int d = 1; d <= HALO; ++d) {
-                    float w = cGauss[HALO - d];
-                    float Xleft  = sTile[ly2][lx - d][0];
-                    float Yleft  = sTile[ly2][lx - d][1];
-                    float Xright = sTile[ly2][lx + d][0];
-                    float Yright = sTile[ly2][lx + d][1];
+                for (int d = -HALO; d <= HALO; ++d) {
+                    float w = cGauss[d + HALO];
+                    float x = sTile[ly2][lx + d][0];
+                    float y = sTile[ly2][lx + d][1];
 
-                    sumX  += (Xleft + Xright) * w;
-                    sumX2 += ((Xleft * Xleft) + (Xright * Xright)) * w;
-                    sumY  += (Yleft + Yright) * w;
-                    sumY2 += ((Yleft * Yleft) + (Yright * Yright)) * w;
-                    sumXY += ((Xleft * Yleft) + (Xright * Yright)) * w;
-                }
-                // center
-                {
-                    float cx = sTile[ly2][lx][0];
-                    float cy = sTile[ly2][lx][1];
-                    float wc = cGauss[HALO];
-                    sumX  += cx * wc;
-                    sumX2 += (cx * cx) * wc;
-                    sumY  += cy * wc;
-                    sumY2 += (cy * cy) * wc;
-                    sumXY += (cx * cy) * wc;
+                    sumX  += x * w;
+                    sumX2 += (x * x) * w;
+                    sumY  += y * w;
+                    sumY2 += (y * y) * w;
+                    sumXY += (x * y) * w;
                 }
                 xconv[ly2][threadIdx.x][0] = sumX;
                 xconv[ly2][threadIdx.x][1] = sumX2;
@@ -215,26 +189,14 @@ __global__ void fusedssimCUDA(
             float out0 = 0.f, out1 = 0.f, out2 = 0.f, out3 = 0.f, out4 = 0.f;
 
 #pragma unroll
-            for (int d = 1; d <= HALO; ++d) {
-                float w = cGauss[HALO - d];
-                float* top = xconv[ly - d][lx];
-                float* bot = xconv[ly + d][lx];
-
-                out0 += (top[0] + bot[0]) * w;
-                out1 += (top[1] + bot[1]) * w;
-                out2 += (top[2] + bot[2]) * w;
-                out3 += (top[3] + bot[3]) * w;
-                out4 += (top[4] + bot[4]) * w;
-            }
-            // center
-            {
-                float wC = cGauss[HALO];
-                float* ctr = xconv[ly][lx];
-                out0 += ctr[0] * wC;
-                out1 += ctr[1] * wC;
-                out2 += ctr[2] * wC;
-                out3 += ctr[3] * wC;
-                out4 += ctr[4] * wC;
+            for (int d = -HALO; d <= HALO; ++d) {
+                float w = cGauss[d + HALO];
+                float* v = xconv[ly + d][lx];
+                out0 += v[0] * w;
+                out1 += v[1] * w;
+                out2 += v[2] * w;
+                out3 += v[3] * w;
+                out4 += v[4] * w;
             }
 
             if (pix_x < W && pix_y < H) {
@@ -307,7 +269,7 @@ __global__ void fusedssim_backwardCUDA(
 
     // Shared memory for the fused data:
     // [0]: dm_dmu1*dL, [1]: dm_dsigma1_sq*dL, [2]: dm_dsigma12*dL
-    __shared__ float sData[3][SHARED_Y][SHARED_X];
+    __shared__ float sData[SHARED_Y][SHARED_X][3];
     __shared__ float sScratch[CONV_Y][CONV_X][3];
 
     for (int c = 0; c < CH; ++c) {
@@ -338,9 +300,9 @@ __global__ void fusedssim_backwardCUDA(
                     float vs1   = get_pix_value(dm_dsigma1_sq,bIdx, c, gy, gx, CH, H, W);
                     float vs12  = get_pix_value(dm_dsigma12,  bIdx, c, gy, gx, CH, H, W);
 
-                    sData[0][row][col] = vmu  * chain;
-                    sData[1][row][col] = vs1  * chain;
-                    sData[2][row][col] = vs12 * chain;
+                    sData[row][col][0] = vmu  * chain;
+                    sData[row][col][1] = vs1  * chain;
+                    sData[row][col][2] = vs12 * chain;
                 }
             }
         }
@@ -357,29 +319,15 @@ __global__ void fusedssim_backwardCUDA(
                     float accum0 = 0.f, accum1 = 0.f, accum2 = 0.f;
 
 #pragma unroll
-                    for (int d = 1; d <= HALO; ++d) {
-                        float w = cGauss[HALO - d];
-                        float left0  = sData[0][yy][lx - d];
-                        float left1  = sData[1][yy][lx - d];
-                        float left2  = sData[2][yy][lx - d];
+                    for (int d = -HALO; d <= HALO; ++d) {
+                        float w = cGauss[d + HALO];
+                        float v0  = sData[yy][lx + d][0];
+                        float v1  = sData[yy][lx + d][1];
+                        float v2  = sData[yy][lx + d][2];
 
-                        float right0 = sData[0][yy][lx + d];
-                        float right1 = sData[1][yy][lx + d];
-                        float right2 = sData[2][yy][lx + d];
-
-                        accum0 += (left0 + right0) * w;
-                        accum1 += (left1 + right1) * w;
-                        accum2 += (left2 + right2) * w;
-                    }
-                    // center
-                    {
-                        float wc = cGauss[HALO];
-                        float c0 = sData[0][yy][lx];
-                        float c1 = sData[1][yy][lx];
-                        float c2 = sData[2][yy][lx];
-                        accum0 += c0 * wc;
-                        accum1 += c1 * wc;
-                        accum2 += c2 * wc;
+                        accum0 += v0 * w;
+                        accum1 += v1 * w;
+                        accum2 += v2 * w;
                     }
 
                     sScratch[yy][threadIdx.x][0] = accum0;
@@ -398,24 +346,15 @@ __global__ void fusedssim_backwardCUDA(
             float sum0 = 0.f, sum1 = 0.f, sum2 = 0.f;
 
 #pragma unroll
-            for (int d = 1; d <= HALO; ++d) {
-                float w = cGauss[HALO - d];
-                float* top = sScratch[ly - d][lx];
-                float* bot = sScratch[ly + d][lx];
+            for (int d = -HALO; d <= HALO; ++d) {
+                float w = cGauss[d + HALO];
+                float* v = sScratch[ly + d][lx];
 
-                sum0 += (top[0] + bot[0]) * w;
-                sum1 += (top[1] + bot[1]) * w;
-                sum2 += (top[2] + bot[2]) * w;
+                sum0 += v[0] * w;
+                sum1 += v[1] * w;
+                sum2 += v[2] * w;
             }
-            // center
-            {
-                float wc = cGauss[HALO];
-                float* ctr = sScratch[ly][lx];
-                sum0 += ctr[0] * wc;
-                sum1 += ctr[1] * wc;
-                sum2 += ctr[2] * wc;
-            }
-
+            
             // final accumulation
             float dL_dpix = sum0 + (2.f * p1) * sum1 + (p2) * sum2;
 
