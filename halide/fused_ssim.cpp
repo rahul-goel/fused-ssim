@@ -110,26 +110,23 @@ int main(int argc, char **argv) {
         sum(weight * val1 * val2)      // sum_xy (for sigma12)
     );
 
+    // Apply zero-padding boundary condition to horizontal_pass for vertical convolution
+    // This uses Halide's native boundary handling
+    Func horizontal_bounded = BoundaryConditions::constant_exterior(
+        horizontal_pass,
+        Tuple(0.0f, 0.0f, 0.0f, 0.0f, 0.0f),  // Zero values for out-of-bounds
+        {{0, img1_param.width()}, {0, img1_param.height()}, {0, img1_param.channels()}}
+    );
+
     // Vertical pass: complete the separable convolution
-    // Apply zero padding for out-of-bounds accesses to horizontal_pass
-    Expr y_offset = y + r - 5;
-    Expr in_bounds = (y_offset >= 0 && y_offset < img1_param.height());
-
-    // Get horizontal_pass values, or use zero if out of bounds
-    auto hp = horizontal_pass(x, clamp(y_offset, 0, img1_param.height() - 1), c);
-    Expr w0 = select(in_bounds, hp[0], 0.0f);
-    Expr w1 = select(in_bounds, hp[1], 0.0f);
-    Expr w2 = select(in_bounds, hp[2], 0.0f);
-    Expr w3 = select(in_bounds, hp[3], 0.0f);
-    Expr w4 = select(in_bounds, hp[4], 0.0f);
-
     Func vertical_pass("vertical_pass");
+    auto hp = horizontal_bounded(x, y + r - 5, c);
     vertical_pass(x, y, c) = Tuple(
-        sum(weight * w0),  // mu1
-        sum(weight * w1),  // E[X^2]
-        sum(weight * w2),  // mu2
-        sum(weight * w3),  // E[Y^2]
-        sum(weight * w4)   // E[XY]
+        sum(weight * hp[0]),  // mu1
+        sum(weight * hp[1]),  // E[X^2]
+        sum(weight * hp[2]),  // mu2
+        sum(weight * hp[3]),  // E[Y^2]
+        sum(weight * hp[4])   // E[XY]
     );
 
     // Compute SSIM map and partial derivatives
