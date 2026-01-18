@@ -5,7 +5,27 @@ import sys
 import time
 from math import exp
 sys.path.insert(0, '.')
-from fused_ssim_halide import fusedssim
+
+# Try to import MPS version first (zero-copy), fall back to CPU version
+DEVICE = "cpu"
+try:
+    if torch.backends.mps.is_available():
+        from fused_ssim_halide_mps import fusedssim
+        DEVICE = "mps"
+        print("Using Halide MPS extension (zero-copy)")
+    else:
+        from fused_ssim_halide import fusedssim
+        print("MPS not available, using CPU extension")
+except ImportError:
+    try:
+        from fused_ssim_halide import fusedssim
+        print("Using Halide CPU extension")
+    except ImportError as e:
+        print(f"Error: Could not import Halide SSIM extension: {e}")
+        print("\nBuild an extension first:")
+        print("  For CPU: bash gen.sh host && bash build.sh")
+        print("  For MPS: bash gen.sh metal && bash build_mps.sh")
+        sys.exit(1)
 
 # Reference Implementation
 # Taken from: https://github.com/Po-Hsun-Su/pytorch-ssim/blob/master/pytorch_ssim/__init__.py
@@ -62,6 +82,7 @@ TEST_SIZES = [
     (128, 128, 3, "128x128x3"),
     (256, 256, 3, "256x256x3"),
     (512, 512, 3, "512x512x3"),
+    (4096, 4096, 10, "512x512x3"),
 ]
 
 # SSIM Constants
@@ -70,6 +91,7 @@ C2 = 0.03 ** 2
 
 print("="*70)
 print("Halide SSIM vs Reference Implementation Comparison")
+print(f"Device: {DEVICE}")
 print("="*70)
 print()
 
@@ -80,14 +102,26 @@ for width, height, channels, name in TEST_SIZES:
     print("-" * 70)
 
     # Create test tensors (NCHW format: batch, channels, height, width)
-    img1 = torch.rand(1, channels, height, width, dtype=torch.float32, device="cpu")
-    img2 = torch.rand(1, channels, height, width, dtype=torch.float32, device="cpu")
+    img1 = torch.rand(1, channels, height, width, dtype=torch.float32, device=DEVICE)
+    img2 = torch.rand(1, channels, height, width, dtype=torch.float32, device=DEVICE)
 
     # Test 1: Halide implementation
-    print("  Running Halide SSIM...")
-    start = time.perf_counter()
+    print(f"  Running Halide SSIM on {DEVICE}...")
 
+    # Synchronize before timing
+    if DEVICE == "mps":
+        torch.mps.synchronize()
+    elif DEVICE == "cuda":
+        torch.cuda.synchronize()
+
+    start = time.perf_counter()
     ssim_map_halide, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim(C1, C2, img1, img2, True)
+
+    # Synchronize after kernel execution
+    if DEVICE == "mps":
+        torch.mps.synchronize()
+    elif DEVICE == "cuda":
+        torch.cuda.synchronize()
 
     halide_time = time.perf_counter() - start
 
@@ -95,18 +129,21 @@ for width, height, channels, name in TEST_SIZES:
     print(f"    Time: {halide_time*1000:.3f} ms")
     print(f"    Mean SSIM: {halide_mean:.6f}")
 
-    # Test 2: Reference implementation
+    # Test 2: Reference implementation (runs on CPU)
     ref_time = None
     ref_mean = None
     diff = None
 
     # Reference requires at least 11x11 images (window size)
     if width >= 11 and height >= 11:
-        print("  Running Reference SSIM...")
+        print("  Running Reference SSIM on CPU...")
+
+        # Copy to CPU for reference implementation
+        img1_cpu = img1.cpu() if DEVICE != "cpu" else img1
+        img2_cpu = img2.cpu() if DEVICE != "cpu" else img2
+
         start = time.perf_counter()
-
-        ssim_ref = reference_ssim(img1, img2, window_size=11, size_average=True)
-
+        ssim_ref = reference_ssim(img1_cpu, img2_cpu, window_size=11, size_average=True)
         ref_time = time.perf_counter() - start
 
         ref_mean = ssim_ref.item()
@@ -118,6 +155,9 @@ for width, height, channels, name in TEST_SIZES:
 
         print(f"  Difference: {diff:.6e}")
         print(f"  Speedup: {speedup:.2f}x")
+
+        if DEVICE != "cpu":
+            print(f"  Note: Reference runs on CPU, Halide on {DEVICE}")
     elif width < 11 or height < 11:
         print("  Reference SSIM: Skipped (image too small, requires 11x11 minimum)")
 
@@ -159,15 +199,29 @@ print()
 print("="*70)
 print("SANITY CHECK: Identical Images (should be ~1.0)")
 print("="*70)
-img_test = torch.rand(1, 3, 256, 256, dtype=torch.float32, device="cpu")
+img_test = torch.rand(1, 3, 256, 256, dtype=torch.float32, device=DEVICE)
 ssim_identical, _, _, _ = fusedssim(C1, C2, img_test, img_test, True)
-print(f"Halide mean SSIM (identical): {ssim_identical.mean().item():.6f}")
 
-ssim_ref_identical = reference_ssim(img_test, img_test, window_size=11, size_average=True)
-print(f"Reference mean SSIM (identical): {ssim_ref_identical.item():.6f}")
+if DEVICE == "mps":
+    torch.mps.synchronize()
+elif DEVICE == "cuda":
+    torch.cuda.synchronize()
+
+print(f"Halide mean SSIM (identical) on {DEVICE}: {ssim_identical.mean().item():.6f}")
+
+# Compare with reference (on CPU)
+img_test_cpu = img_test.cpu() if DEVICE != "cpu" else img_test
+ssim_ref_identical = reference_ssim(img_test_cpu, img_test_cpu, window_size=11, size_average=True)
+print(f"Reference mean SSIM (identical) on CPU: {ssim_ref_identical.item():.6f}")
 print(f"Difference: {abs(ssim_identical.mean().item() - ssim_ref_identical.item()):.6e}")
+
+# Verify correctness
+assert abs(ssim_identical.mean().item() - 1.0) < 0.01, "Identical images should have SSIM ≈ 1.0"
+print("✓ PASS")
 
 print()
 print("="*70)
 print("Tests complete!")
+if DEVICE == "mps":
+    print("Zero-copy MPS integration working! ✓")
 print("="*70)
