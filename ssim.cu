@@ -243,8 +243,8 @@ __global__ void fusedssimCUDA(
                 float mu1_sq = mu1 * mu1;
                 float mu2_sq = mu2 * mu2;
 
-                float sigma1_sq = out1 - mu1_sq;
-                float sigma2_sq = out3 - mu2_sq;
+                float sigma1_sq = fmaxf(0.0f, out1 - mu1_sq);
+                float sigma2_sq = fmaxf(0.0f, out3 - mu2_sq);
                 float sigma12   = out4 - mu1 * mu2;
 
                 float A = mu1_sq + mu2_sq + C1;
@@ -253,20 +253,22 @@ __global__ void fusedssimCUDA(
                 float D_ = 2.f * sigma12 + C2;
 
                 float val = (C_ * D_) / (A * B);
+                bool clamped = (val < -1.0f || val > 1.0f);
+                val = fmaxf(-1.0f, fminf(1.0f, val));
 
                 int global_idx = bIdx * CH * num_pix + c * num_pix + pix_id;
                 ssim_map[global_idx] = val;
 
                 if (dm_dmu1) {
-                    // partial derivatives
-                    float d_m_dmu1 = (
+                    // partial derivatives (zero if clamped)
+                    float d_m_dmu1 = clamped ? 0.0f : (
                         (mu2 * 2.f * D_) / (A * B)
                         - (mu2 * 2.f * C_) / (A * B)
                         - (mu1 * 2.f * C_ * D_) / (A * A * B)
                         + (mu1 * 2.f * C_ * D_) / (A * B * B)
                     );
-                    float d_m_dsigma1_sq = (-C_ * D_) / (A * B * B);
-                    float d_m_dsigma12   = (2.f * C_) / (A * B);
+                    float d_m_dsigma1_sq = clamped ? 0.0f : (-C_ * D_) / (A * B * B);
+                    float d_m_dsigma12   = clamped ? 0.0f : (2.f * C_) / (A * B);
 
                     dm_dmu1[global_idx]       = d_m_dmu1;
                     dm_dsigma1_sq[global_idx] = d_m_dsigma1_sq;
