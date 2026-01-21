@@ -228,4 +228,5 @@ Thanks to:
 - [Anton Smirnov](https://pxl-th.github.io/) for adding AMD GPU enablement.
 - [Jonah J. Newton](https://jonahnewton.com.au/) for Apple MPS kernels.
 - [Janusch](https://github.com/MrNeRF) for further CUDA optimizations.
+- [Pawel Tomasz Pieta](https://orbit.dtu.dk/en/persons/pawel-tomasz-pieta/) for 3D version implementation.
 - [Florian](https://fhahlbohm.github.io/) and [Ishaan](https://ishaanshah.xyz) for testing.
