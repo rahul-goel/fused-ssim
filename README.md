@@ -28,7 +28,7 @@ This project has been tested with:
 - PyTorch `2.5.1+cu124` and CUDA `12.6` on Windows 11
 
 ### Apple Metal (macOS)
-- PyTorch `2.5.1` on macOS 15.7.1
+- PyTorch `2.10.0` on macOS 15.7.1
 
 ## Installation Instructions
 
@@ -70,7 +70,7 @@ hipcc --version
 
 #### Apple Metal (MPS)
 
-Install PyTorch 2.5.1 with MPS backend.
+Install PyTorch 2.10.0 with MPS backend.
 
 ```bash
 pip install torch torchvision
