@@ -29,6 +29,12 @@ def configure_cuda():
     if torch.version.hip:
         log("Detected AMD GPU with ROCm/HIP")
         compiler_args["nvcc"].append("-ffast-math")
+        # Force ROCm headers ahead of /usr/include so NVIDIA's thrust/vector_types
+        # don't win on hosts with both toolkits installed (clang's -idirafter demotes torch's -I).
+        rocm_home = os.environ.get("ROCM_HOME") or os.environ.get("ROCM_PATH") or "/opt/rocm"
+        rocm_include = os.path.join(rocm_home, "include")
+        if os.path.isdir(rocm_include):
+            compiler_args["nvcc"].extend(["-isystem", rocm_include])
         detected_arch = "AMD GPU (ROCm/HIP)"
     else:
         compiler_args["nvcc"].extend(("--maxrregcount=32", "--use_fast_math"))
