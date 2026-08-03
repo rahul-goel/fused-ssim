@@ -42,9 +42,11 @@ class FusedSSIMMap(torch.autograd.Function):
     def backward(ctx, opt_grad):
         img1, img2, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = ctx.saved_tensors
         C1, C2, padding = ctx.C1, ctx.C2, ctx.padding
-        dL_dmap = opt_grad
+        dL_dmap = opt_grad.contiguous()
         if padding == "valid":
-            dL_dmap = torch.zeros_like(img1)
+            # zeros_like() copies the input's strides, so ask for a dense
+            # tensor explicitly: the kernels require contiguous buffers.
+            dL_dmap = torch.zeros_like(img1, memory_format=torch.contiguous_format)
             if ctx.spatial_dims == 2:
                 dL_dmap[:, :, 5:-5, 5:-5] = opt_grad
             elif ctx.spatial_dims == 3:
@@ -64,7 +66,9 @@ def fused_ssim3d(img1, img2, padding="same", train=True):
 
     assert padding in allowed_padding
 
+    # Both inputs must be contiguous: the kernels index them as dense arrays.
     img1 = img1.contiguous()
+    img2 = img2.contiguous()
     map = FusedSSIMMap.apply(C1, C2, img1, img2, padding, train, 3)
     return map.mean()
 
@@ -74,7 +78,11 @@ def fused_ssim(img1, img2, padding="same", train=True):
 
     assert padding in allowed_padding
 
+    # Both inputs must be contiguous: the kernels index them as dense arrays.
+    # Passing a non-contiguous img2 (e.g. an NHWC tensor permuted to NCHW) used
+    # to silently return a wrong SSIM rather than raising.
     img1 = img1.contiguous()
+    img2 = img2.contiguous()
     map = FusedSSIMMap.apply(C1, C2, img1, img2, padding, train, 2)
     return map.mean()
 

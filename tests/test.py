@@ -113,6 +113,34 @@ if __name__ == "__main__":
         assert torch.isclose(img1_og.grad, img1_mine_same.grad).all()
         assert torch.isclose(img1_mine_valid.grad, img1_pm.grad).all()
 
+    # Non-contiguous Inputs: the kernels require dense buffers, so the wrappers
+    # have to materialize contiguous copies. A permuted NHWC -> NCHW view (what
+    # image pipelines commonly hand over) used to silently yield a wrong SSIM.
+    for padding in ["same", "valid"]:
+        with torch.no_grad():
+            img1_ref = torch.rand([B, CH, H, W], device=fused_ssim_device)
+            img2_ref = torch.rand([B, CH, H, W], device=fused_ssim_device)
+
+            # Same values, but laid out as NHWC and viewed as NCHW.
+            img1_nc = img1_ref.permute(0, 2, 3, 1).contiguous().permute(0, 3, 1, 2)
+            img2_nc = img2_ref.permute(0, 2, 3, 1).contiguous().permute(0, 3, 1, 2)
+            assert not img1_nc.is_contiguous()
+            assert not img2_nc.is_contiguous()
+            assert torch.equal(img1_ref, img1_nc)
+            assert torch.equal(img2_ref, img2_nc)
+
+        img1_ref = nn.Parameter(img1_ref)
+        img1_nc = nn.Parameter(img1_nc)
+
+        val_ref = fused_ssim(img1_ref, img2_ref, padding)
+        val_nc = fused_ssim(img1_nc, img2_nc, padding)
+        assert torch.isclose(val_ref, val_nc), \
+            f"padding={padding}: {val_ref.item()} != {val_nc.item()}"
+
+        val_ref.backward()
+        val_nc.backward()
+        assert torch.isclose(img1_ref.grad, img1_nc.grad).all()
+
     # Performance Benchmarks: Compare forward and backward pass timings
     img1 = nn.Parameter(torch.rand([B, CH, H, W], device=fused_ssim_device))
     img2 = torch.rand([B, CH, H, W], device=fused_ssim_device)
