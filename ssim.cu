@@ -453,18 +453,28 @@ fusedssim(
               B);
     dim3 block(BLOCK_X, BLOCK_Y);
 
-    // Output SSIM map
-    auto ssim_map = torch::zeros_like(img1, img1.options()).contiguous();
+    // The kernel indexes every buffer as a dense NCHW array, so bind the
+    // contiguous views to named locals. Calling .contiguous() inline in the
+    // launch arguments would destroy the temporary at the end of the statement
+    // while the kernel is still running, leaving a dangling pointer.
+    auto img1_c = img1.contiguous();
+    auto img2_c = img2.contiguous();
+
+    // Allocate the outputs from the contiguous view rather than from img1:
+    // zeros_like() preserves the input's strides, so a non-contiguous img1
+    // would yield non-dense buffers that the kernel cannot address, leaving
+    // most elements silently at zero.
+    auto ssim_map = torch::zeros_like(img1_c);
 
     // Optionally allocate derivative Tensors
-    auto dm_dmu1       = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto dm_dsigma1_sq = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto dm_dsigma12   = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
+    auto dm_dmu1       = train ? torch::zeros_like(img1_c) : torch::empty({0}, img1_c.options());
+    auto dm_dsigma1_sq = train ? torch::zeros_like(img1_c) : torch::empty({0}, img1_c.options());
+    auto dm_dsigma12   = train ? torch::zeros_like(img1_c) : torch::empty({0}, img1_c.options());
 
     fusedssimCUDA<<<grid, block>>>(
         H, W, CH, C1, C2,
-        img1.contiguous().data_ptr<float>(),
-        img2.contiguous().data_ptr<float>(),
+        img1_c.data_ptr<float>(),
+        img2_c.data_ptr<float>(),
         ssim_map.data_ptr<float>(),
         train ? dm_dmu1.data_ptr<float>()       : nullptr,
         train ? dm_dsigma1_sq.data_ptr<float>() : nullptr,
@@ -497,7 +507,16 @@ fusedssim_backward(
     int H  = img1.size(2);
     int W  = img1.size(3);
 
-    auto dL_dimg1 = torch::zeros_like(img1);
+    // Same requirements as the forward pass: dense buffers, and the contiguous
+    // views must outlive the asynchronous kernel launch.
+    auto img1_c          = img1.contiguous();
+    auto img2_c          = img2.contiguous();
+    auto dL_dmap_c       = dL_dmap.contiguous();
+    auto dm_dmu1_c       = dm_dmu1.contiguous();
+    auto dm_dsigma1_sq_c = dm_dsigma1_sq.contiguous();
+    auto dm_dsigma12_c   = dm_dsigma12.contiguous();
+
+    auto dL_dimg1 = torch::zeros_like(img1_c);
 
     dim3 grid((W + BLOCK_X - 1) / BLOCK_X,
               (H + BLOCK_Y - 1) / BLOCK_Y,
@@ -506,13 +525,13 @@ fusedssim_backward(
 
     fusedssim_backwardCUDA<<<grid, block>>>(
         H, W, CH, C1, C2,
-        img1.contiguous().data_ptr<float>(),
-        img2.contiguous().data_ptr<float>(),
-        dL_dmap.contiguous().data_ptr<float>(),
+        img1_c.data_ptr<float>(),
+        img2_c.data_ptr<float>(),
+        dL_dmap_c.data_ptr<float>(),
         dL_dimg1.data_ptr<float>(),
-        dm_dmu1.contiguous().data_ptr<float>(),
-        dm_dsigma1_sq.contiguous().data_ptr<float>(),
-        dm_dsigma12.contiguous().data_ptr<float>()
+        dm_dmu1_c.data_ptr<float>(),
+        dm_dsigma1_sq_c.data_ptr<float>(),
+        dm_dsigma12_c.data_ptr<float>()
     );
 
     return dL_dimg1;

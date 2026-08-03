@@ -498,17 +498,26 @@ fusedssim(
     int H  = img1.size(2);
     int W  = img1.size(3);
 
-    // Create output tensors (empty for now)
-    auto ssim_map = torch::zeros_like(img1, img1.options()).contiguous();
+    // Hold the contiguous views in named tensors: binding only the raw pointer
+    // would let the temporary returned by .contiguous() die at the end of the
+    // statement, dangling while the kernel is still queued.
+    auto img1_c = img1.contiguous();
+    auto img2_c = img2.contiguous();
+
+    // Create output tensors (empty for now). Allocate from the contiguous view:
+    // zeros_like() preserves the input's strides, so a non-contiguous img1
+    // would yield non-dense buffers that the kernel cannot address, leaving
+    // most elements silently at zero.
+    auto ssim_map = torch::zeros_like(img1_c);
 
     // Optionally allocate derivative tensors
-    auto dm_dmu1       = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto dm_dsigma1_sq = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto dm_dsigma12   = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
+    auto dm_dmu1       = train ? torch::zeros_like(img1_c) : torch::empty({0}, img1_c.options());
+    auto dm_dsigma1_sq = train ? torch::zeros_like(img1_c) : torch::empty({0}, img1_c.options());
+    auto dm_dsigma12   = train ? torch::zeros_like(img1_c) : torch::empty({0}, img1_c.options());
 
     // Get data pointers to contiguous tensors
-    float* img1_ptr = img1.contiguous().data_ptr<float>();
-    float* img2_ptr = img2.contiguous().data_ptr<float>();
+    float* img1_ptr = img1_c.data_ptr<float>();
+    float* img2_ptr = img2_c.data_ptr<float>();
 
     // Declare kernel launch parameters
     sycl::range<3> localRange{
@@ -573,16 +582,25 @@ fusedssim_backward(
     int H  = img1.size(2);
     int W  = img1.size(3);
 
+    // Keep the contiguous views alive for the duration of the kernel (see the
+    // forward pass), then take pointers from them.
+    auto img1_c          = img1.contiguous();
+    auto img2_c          = img2.contiguous();
+    auto dL_dmap_c       = dL_dmap.contiguous();
+    auto dm_dmu1_c       = dm_dmu1.contiguous();
+    auto dm_dsigma1_sq_c = dm_dsigma1_sq.contiguous();
+    auto dm_dsigma12_c   = dm_dsigma12.contiguous();
+
     // Create output gradient tensor (empty for now)
-    auto dL_dimg1 = torch::zeros_like(img1);
+    auto dL_dimg1 = torch::zeros_like(img1_c);
 
     // Get data pointers to contiguous tensors
-    float* img1_ptr = img1.contiguous().data_ptr<float>();
-    float* img2_ptr = img2.contiguous().data_ptr<float>();
-    float* dL_dmap_ptr = dL_dmap.contiguous().data_ptr<float>();
-    float* dm_dmu1_ptr = dm_dmu1.contiguous().data_ptr<float>();
-    float* dm_dsigma1_sq_ptr = dm_dsigma1_sq.contiguous().data_ptr<float>();
-    float* dm_dsigma12_ptr = dm_dsigma12.contiguous().data_ptr<float>();
+    float* img1_ptr = img1_c.data_ptr<float>();
+    float* img2_ptr = img2_c.data_ptr<float>();
+    float* dL_dmap_ptr = dL_dmap_c.data_ptr<float>();
+    float* dm_dmu1_ptr = dm_dmu1_c.data_ptr<float>();
+    float* dm_dsigma1_sq_ptr = dm_dsigma1_sq_c.data_ptr<float>();
+    float* dm_dsigma12_ptr = dm_dsigma12_c.data_ptr<float>();
 
     // Declare kernel launch parameters
     sycl::range<3> localRange{

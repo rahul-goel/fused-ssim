@@ -449,11 +449,14 @@ fusedssim(
     bool train
           ) {
     
-    // Setup output tensors
-    auto out_ssim = torch::zeros_like(img1, img1.options()).contiguous();
-    auto out_dm_mu = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto out_dm_s1 = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto out_dm_s12 = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
+    // Setup output tensors. Request a dense layout explicitly: zeros_like()
+    // preserves the input's strides, so a non-contiguous img1 would yield
+    // non-dense buffers that the shader cannot address, leaving most elements
+    // silently at zero.
+    auto out_ssim = torch::zeros_like(img1, img1.options(), torch::MemoryFormat::Contiguous);
+    auto out_dm_mu = train ? torch::zeros_like(img1, img1.options(), torch::MemoryFormat::Contiguous) : torch::empty({0}, img1.options());
+    auto out_dm_s1 = train ? torch::zeros_like(img1, img1.options(), torch::MemoryFormat::Contiguous) : torch::empty({0}, img1.options());
+    auto out_dm_s12 = train ? torch::zeros_like(img1, img1.options(), torch::MemoryFormat::Contiguous) : torch::empty({0}, img1.options());
     
     @autoreleasepool{
         // ensure input shapes match
@@ -549,8 +552,8 @@ fusedssim_backward(
     torch::Tensor &dm_dsigma12
 ) {
     
-    // Setup output tensor
-    torch::Tensor out_dL = torch::zeros_like(img1);
+    // Setup output tensor (dense layout required by the shader, see forward)
+    torch::Tensor out_dL = torch::zeros_like(img1, img1.options(), torch::MemoryFormat::Contiguous);
     
     @autoreleasepool{
         int B = img1.size(0);
