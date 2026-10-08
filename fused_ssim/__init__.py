@@ -74,7 +74,10 @@ def fused_ssim(img1, img2, padding="same", train=True):
 
     assert padding in allowed_padding
 
-    img1 = img1.contiguous()
+    # Only the CUDA/HIP 2D kernels read channels-last (e.g. a permuted NHWC render) in place.
+    # The Metal and SYCL kernels index flat NCHW buffers.
+    if not img1.is_cuda or not img1.is_contiguous(memory_format=torch.channels_last):
+        img1 = img1.contiguous()
     map = FusedSSIMMap.apply(C1, C2, img1, img2, padding, train, 2)
     return map.mean()
 
