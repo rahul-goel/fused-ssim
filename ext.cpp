@@ -10,6 +10,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   // 2D SSIM (available on all backends)
   m.def("fusedssim", &fusedssim);
   m.def("fusedssim_backward", &fusedssim_backward);
+#ifdef FUSED_SSIM_CUDA
+  m.def("fusedssim_sum", &fusedssim_sum);
+  m.def("fusedssim_backward_mean", &fusedssim_backward_mean);
+#endif
 
   // 3D SSIM (CUDA only for now)
 #ifdef FUSED_SSIM_CUDA
