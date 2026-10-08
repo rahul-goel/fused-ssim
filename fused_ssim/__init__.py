@@ -75,7 +75,7 @@ class FusedSSIMMean(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, C1, C2, img1, img2, pad):
-        map_sum, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim_sum(C1, C2, img1, img2, pad)
+        map_sum, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim_sum(C1, C2, img1, img2, pad, False)
         B, CH, H, W = img1.shape
         count = B * CH * max(H - 2 * pad, 0) * max(W - 2 * pad, 0)
         ctx.save_for_backward(img1.detach(), img2, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
@@ -86,7 +86,7 @@ class FusedSSIMMean(torch.autograd.Function):
     def backward(ctx, grad):
         img1, img2, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = ctx.saved_tensors
         dimg1 = fusedssim_backward_mean(ctx.C1, ctx.C2, img1, img2, grad.reshape(1), float(ctx.count), ctx.pad,
-                                        dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
+                                        dm_dmu1, dm_dsigma1_sq, dm_dsigma12, None, 0.0)
         return None, None, dimg1, None, None
 
 
@@ -109,3 +109,47 @@ def fused_ssim(img1, img2, padding="same", train=True):
     map = FusedSSIMMap.apply(C1, C2, img1, img2, padding, train, 2)
     return map.mean()
 
+
+class FusedL1SSIMMean(torch.autograd.Function):
+    """(mean |img1 - img2|, mean SSIM over the valid region) in one pass; the
+    backward adds both image gradients inside the SSIM backward kernel."""
+
+    @staticmethod
+    def forward(ctx, C1, C2, img1, img2, pad):
+        sums, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = fusedssim_sum(C1, C2, img1, img2, pad, True)
+        B, CH, H, W = img1.shape
+        count = B * CH * max(H - 2 * pad, 0) * max(W - 2 * pad, 0)
+        ctx.save_for_backward(img1.detach(), img2, dm_dmu1, dm_dsigma1_sq, dm_dsigma12)
+        ctx.C1, ctx.C2, ctx.pad, ctx.count, ctx.l1_count = C1, C2, pad, count, img1.numel()
+        return sums[1] / img1.numel(), sums[0] / count
+
+    @staticmethod
+    def backward(ctx, g_l1, g_ssim):
+        img1, img2, dm_dmu1, dm_dsigma1_sq, dm_dsigma12 = ctx.saved_tensors
+        if g_ssim is None:
+            g_ssim = torch.zeros((), device=img1.device)
+        dimg1 = fusedssim_backward_mean(ctx.C1, ctx.C2, img1, img2, g_ssim.reshape(1), float(ctx.count), ctx.pad,
+                                        dm_dmu1, dm_dsigma1_sq, dm_dsigma12,
+                                        None if g_l1 is None else g_l1.reshape(1), float(ctx.l1_count))
+        return None, None, dimg1, None, None
+
+
+def fused_l1_ssim(img1, img2, padding="valid"):
+    """Returns (mean L1, mean SSIM), equal to (F.l1_loss(img1, img2), fused_ssim(img1, img2, padding))
+    up to floating-point summation order, from one forward and one backward kernel.
+
+    CUDA/HIP, 2D, float32 only. Only img1 is differentiable: img2 must be a fixed target."""
+    C1 = 0.01 ** 2
+    C2 = 0.03 ** 2
+    assert padding in allowed_padding
+    if not img1.is_cuda:
+        raise ValueError("fused_l1_ssim requires CUDA/HIP inputs")
+    if img1.device != img2.device or img1.dtype != torch.float32 or img2.dtype != torch.float32:
+        raise ValueError("fused_l1_ssim requires float32 inputs on the same CUDA/HIP device")
+    if img1.ndim != 4 or img1.shape != img2.shape:
+        raise ValueError("fused_l1_ssim requires matching 4D image shapes")
+    if img2.requires_grad:
+        raise ValueError("fused_l1_ssim requires a fixed target (img2.requires_grad=False)")
+    if not img1.is_contiguous(memory_format=torch.channels_last):
+        img1 = img1.contiguous()
+    return FusedL1SSIMMean.apply(C1, C2, img1, img2, 5 if padding == "valid" else 0)
