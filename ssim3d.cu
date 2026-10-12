@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 #include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/CUDAContext.h>
 
 namespace cg = cooperative_groups;
 
@@ -717,7 +718,7 @@ fusedssim3d(
 
     auto xy_workspace = torch::empty({5, B, CH, D, H, W}, img1.options()).contiguous();
 
-    fusedssim3dCUDA<<<grid, block>>>(
+    fusedssim3dCUDA<<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
         H, W, D, B, CH, C1, C2,
         img1.contiguous().data_ptr<float>(),
         img2.contiguous().data_ptr<float>(),
@@ -764,7 +765,7 @@ fusedssim_backward3d(
 
     auto back_workspace = torch::empty({3, B, CH, D, H, W}, img1.options()).contiguous();
 
-    fusedssim_backward3dCUDA<<<grid, block>>>(
+    fusedssim_backward3dCUDA<<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
         H, W, D, B, CH, C1, C2,
         img1.contiguous().data_ptr<float>(),
         img2.contiguous().data_ptr<float>(),
