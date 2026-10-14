@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 #include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/CUDAContext.h>
 
 namespace cg = cooperative_groups;
 
@@ -40,15 +41,24 @@ __constant__ float cGauss[11] = {
 // ------------------------------------------
 // Utility: Safe pixel fetch w/ zero padding
 // ------------------------------------------
+// Element offset for NCHW, or for channels-last (NHWC memory) when nhwc.
+__device__ __forceinline__ int pix_index(
+    int b, int c, int y, int x,
+    int CH, int H, int W, bool nhwc
+) {
+    return nhwc ? ((b * H + y) * W + x) * CH + c
+                : b * CH * H * W + c * H * W + y * W + x;
+}
+
 __device__ __forceinline__ float get_pix_value(
     const float* img, 
     int b, int c, int y, int x,
-    int CH, int H, int W
+    int CH, int H, int W, bool nhwc
 ) {
     if (x < 0 || x >= W || y < 0 || y >= H) {
         return 0.0f;
     }
-    return img[b * CH * H * W + c * H * W + y * W + x];
+    return img[pix_index(b, c, y, x, CH, H, W, nhwc)];
 }
 
 // ------------------------------------------
@@ -70,10 +80,16 @@ __global__ void fusedssimCUDA(
     float* __restrict__ ssim_map,
     float* __restrict__ dm_dmu1,
     float* __restrict__ dm_dsigma1_sq,
-    float* __restrict__ dm_dsigma12
+    float* __restrict__ dm_dsigma12,
+    bool nhwc,
+    float* __restrict__ block_sums, // if set: write this block's SSIM sum over the valid region instead of ssim_map
+    int pad,                        // valid-region margin (5 for padding="valid", 0 for "same")
+    bool with_l1                    // with block_sums: also write the block's sum |img1 - img2| (whole image)
 ) {
     auto block = cg::this_thread_block();
     const int bIdx   = block.group_index().z;  // batch index
+    float local_sum  = 0.f;
+    float local_l1   = 0.f;
     const int pix_y  = block.group_index().y * BLOCK_Y + block.thread_index().y;
     const int pix_x  = block.group_index().x * BLOCK_X + block.thread_index().x;
     const int pix_id = pix_y * W + pix_x;
@@ -106,8 +122,8 @@ __global__ void fusedssimCUDA(
                     int gy = tileStartY + local_y - HALO;
                     int gx = tileStartX + local_x - HALO;
 
-                    float X = get_pix_value(img1, bIdx, c, gy, gx, CH, H, W);
-                    float Y = get_pix_value(img2, bIdx, c, gy, gx, CH, H, W);
+                    float X = get_pix_value(img1, bIdx, c, gy, gx, CH, H, W, nhwc);
+                    float Y = get_pix_value(img2, bIdx, c, gy, gx, CH, H, W, nhwc);
 
                     sTile[local_y][local_x][0] = X;
                     sTile[local_y][local_x][1] = Y;
@@ -256,8 +272,18 @@ __global__ void fusedssimCUDA(
                 bool clamped = (val < -1.0f || val > 1.0f);
                 val = fmaxf(-1.0f, fminf(1.0f, val));
 
-                int global_idx = bIdx * CH * num_pix + c * num_pix + pix_id;
-                ssim_map[global_idx] = val;
+                int global_idx = pix_index(bIdx, c, pix_y, pix_x, CH, H, W, nhwc);
+                if (block_sums) {
+                    if (pix_y >= pad && pix_y < H - pad && pix_x >= pad && pix_x < W - pad)
+                        local_sum += val;
+                    if (with_l1) {
+                        const float d = get_pix_value(img1, bIdx, c, pix_y, pix_x, CH, H, W, nhwc)
+                                        - get_pix_value(img2, bIdx, c, pix_y, pix_x, CH, H, W, nhwc);
+                        local_l1 += fabsf(d);
+                    }
+                } else {
+                    ssim_map[global_idx] = val;
+                }
 
                 if (dm_dmu1) {
                     // partial derivatives (zero if clamped)
@@ -275,6 +301,32 @@ __global__ void fusedssimCUDA(
                     dm_dsigma12[global_idx]   = d_m_dsigma12;
                 }
             }
+        }
+    }
+    if (block_sums) {
+        // Fixed-order shared-memory tree reduction (no warp-size assumption, no float
+        // atomics): one partial sum per block, summed on the host side in a fixed order.
+        // Reuses xconv; the channel loop is done with it after this sync.
+        constexpr int T = BLOCK_X * BLOCK_Y;
+        float* red = &xconv[0][0][0];
+        const int tid = block.thread_rank();
+        block.sync();
+        red[tid] = local_sum;
+        red[T + tid] = local_l1;
+        block.sync();
+        for (int s = T / 2; s > 0; s >>= 1) {
+            if (tid < s) {
+                red[tid] += red[tid + s];
+                red[T + tid] += red[T + tid + s];
+            }
+            block.sync();
+        }
+        if (tid == 0) {
+            const int nblocks = gridDim.x * gridDim.y * gridDim.z;
+            const int b = (block.group_index().z * gridDim.y + block.group_index().y) * gridDim.x
+                          + block.group_index().x;
+            block_sums[b] = red[0];
+            if (with_l1) block_sums[nblocks + b] = red[T];
         }
     }
 }
@@ -297,7 +349,13 @@ __global__ void fusedssim_backwardCUDA(
     float* __restrict__ dL_dimg1,
     const float* __restrict__ dm_dmu1,
     const float* __restrict__ dm_dsigma1_sq,
-    const float* __restrict__ dm_dsigma12
+    const float* __restrict__ dm_dsigma12,
+    bool nhwc,
+    const float* __restrict__ dL_dmean, // if set: dL/dmap = *dL_dmean / count inside the valid region, 0 outside
+    float count,
+    int pad,
+    const float* __restrict__ dL_dl1,   // if set: add sign(img1 - img2) * (*dL_dl1 / l1_count)
+    float l1_count
 ) {
     auto block = cg::this_thread_block();
 
@@ -315,8 +373,8 @@ __global__ void fusedssim_backwardCUDA(
     for (int c = 0; c < CH; ++c) {
         float p1 = 0.f, p2 = 0.f;
         if (pix_x < W && pix_y < H) {
-            p1 = get_pix_value(img1, bIdx, c, pix_y, pix_x, CH, H, W);
-            p2 = get_pix_value(img2, bIdx, c, pix_y, pix_x, CH, H, W);
+            p1 = get_pix_value(img1, bIdx, c, pix_y, pix_x, CH, H, W, nhwc);
+            p2 = get_pix_value(img2, bIdx, c, pix_y, pix_x, CH, H, W, nhwc);
         }
 
         // (1) Load + fuse multiplication
@@ -335,10 +393,17 @@ __global__ void fusedssim_backwardCUDA(
                 for (int col = lane_id; col < SHARED_X; col += 32) {
                     int gx = start_x + col - HALO;
 
-                    float chain = get_pix_value(dL_dmap,      bIdx, c, gy, gx, CH, H, W);
-                    float vmu   = get_pix_value(dm_dmu1,      bIdx, c, gy, gx, CH, H, W);
-                    float vs1   = get_pix_value(dm_dsigma1_sq,bIdx, c, gy, gx, CH, H, W);
-                    float vs12  = get_pix_value(dm_dsigma12,  bIdx, c, gy, gx, CH, H, W);
+                    float chain;
+                    if (dL_dmean) {
+                        // mean backward: grad / numel over the valid region (zero padding outside)
+                        chain = (gy >= pad && gy < H - pad && gx >= pad && gx < W - pad)
+                                    ? __fdiv_rn(*dL_dmean, count) : 0.0f;
+                    } else {
+                        chain = get_pix_value(dL_dmap, bIdx, c, gy, gx, CH, H, W, nhwc);
+                    }
+                    float vmu   = get_pix_value(dm_dmu1,      bIdx, c, gy, gx, CH, H, W, nhwc);
+                    float vs1   = get_pix_value(dm_dsigma1_sq,bIdx, c, gy, gx, CH, H, W, nhwc);
+                    float vs12  = get_pix_value(dm_dsigma12,  bIdx, c, gy, gx, CH, H, W, nhwc);
 
                     sData[0][row][col] = vmu  * chain;
                     sData[1][row][col] = vs1  * chain;
@@ -420,12 +485,25 @@ __global__ void fusedssim_backwardCUDA(
 
             // final accumulation
             float dL_dpix = sum0 + (2.f * p1) * sum1 + (p2) * sum2;
+            if (dL_dl1) {
+                // F.l1_loss(...).mean() backward: sgn(x - y) * (g / numel), then
+                // the autograd accumulation with the SSIM gradient (one add).
+                const float d   = p1 - p2;
+                const float sgn = (d > 0.f) ? 1.f : ((d < 0.f) ? -1.f : 0.f);
+                dL_dpix = __fadd_rn(dL_dpix, __fmul_rn(sgn, __fdiv_rn(*dL_dl1, l1_count)));
+            }
 
-            int out_idx = bIdx * CH * num_pix + c * num_pix + pix_id;
+            int out_idx = pix_index(bIdx, c, pix_y, pix_x, CH, H, W, nhwc);
             dL_dimg1[out_idx] = dL_dpix;
         }
         block.sync();
     }
+}
+
+// Channels-last inputs (e.g. permuted NHWC renders) are used in place; everything else as NCHW.
+static std::pair<bool, at::MemoryFormat> layout_of(const torch::Tensor &t) {
+    const bool nhwc = t.dim() == 4 && !t.is_contiguous() && t.is_contiguous(at::MemoryFormat::ChannelsLast);
+    return {nhwc, nhwc ? at::MemoryFormat::ChannelsLast : at::MemoryFormat::Contiguous};
 }
 
 // ------------------------------------------
@@ -453,25 +531,59 @@ fusedssim(
               B);
     dim3 block(BLOCK_X, BLOCK_Y);
 
-    // Output SSIM map
-    auto ssim_map = torch::zeros_like(img1, img1.options()).contiguous();
+    // Every in-bounds pixel of every output is written, so no zero-fill (empty_like).
+    const auto [nhwc, fmt] = layout_of(img1);
+    auto i1 = img1.contiguous(fmt);
+    auto i2 = img2.contiguous(fmt);
+    auto ssim_map = torch::empty_like(i1, fmt);
 
     // Optionally allocate derivative Tensors
-    auto dm_dmu1       = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto dm_dsigma1_sq = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
-    auto dm_dsigma12   = train ? torch::zeros_like(img1) : torch::empty({0}, img1.options());
+    auto dm_dmu1       = train ? torch::empty_like(i1, fmt) : torch::empty({0}, img1.options());
+    auto dm_dsigma1_sq = train ? torch::empty_like(i1, fmt) : torch::empty({0}, img1.options());
+    auto dm_dsigma12   = train ? torch::empty_like(i1, fmt) : torch::empty({0}, img1.options());
 
-    fusedssimCUDA<<<grid, block>>>(
+    fusedssimCUDA<<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
         H, W, CH, C1, C2,
-        img1.contiguous().data_ptr<float>(),
-        img2.contiguous().data_ptr<float>(),
+        i1.data_ptr<float>(),
+        i2.data_ptr<float>(),
         ssim_map.data_ptr<float>(),
         train ? dm_dmu1.data_ptr<float>()       : nullptr,
         train ? dm_dsigma1_sq.data_ptr<float>() : nullptr,
-        train ? dm_dsigma12.data_ptr<float>()   : nullptr
+        train ? dm_dsigma12.data_ptr<float>()   : nullptr,
+        nhwc,
+        nullptr,
+        0,
+        false
     );
 
     return std::make_tuple(ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12);
+}
+
+// Mean SSIM over the valid region (margin `pad`) without materializing the map.
+// Returns (sums, dm_dmu1, dm_dsigma1_sq, dm_dsigma12), sums = [SSIM sum] or [SSIM sum, L1 sum] with with_l1;
+// deterministic (per-block partial sums, then a fixed-order torch sum).
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+fusedssim_sum(float C1, float C2, torch::Tensor &img1, torch::Tensor &img2, int pad, bool with_l1)
+{
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(img1));
+    int B  = img1.size(0);
+    int CH = img1.size(1);
+    int H  = img1.size(2);
+    int W  = img1.size(3);
+    dim3 grid((W + BLOCK_X - 1) / BLOCK_X, (H + BLOCK_Y - 1) / BLOCK_Y, B);
+    dim3 block(BLOCK_X, BLOCK_Y);
+    const auto [nhwc, fmt] = layout_of(img1);
+    auto i1 = img1.contiguous(fmt);
+    auto i2 = img2.contiguous(fmt);
+    auto block_sums    = torch::empty({with_l1 ? 2 : 1, (int64_t)grid.x * grid.y * grid.z}, img1.options());
+    auto dm_dmu1       = torch::empty_like(i1, fmt);
+    auto dm_dsigma1_sq = torch::empty_like(i1, fmt);
+    auto dm_dsigma12   = torch::empty_like(i1, fmt);
+    fusedssimCUDA<<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
+        H, W, CH, C1, C2, i1.data_ptr<float>(), i2.data_ptr<float>(), nullptr,
+        dm_dmu1.data_ptr<float>(), dm_dsigma1_sq.data_ptr<float>(), dm_dsigma12.data_ptr<float>(),
+        nhwc, block_sums.data_ptr<float>(), pad, with_l1);
+    return std::make_tuple(block_sums.sum(1), dm_dmu1, dm_dsigma1_sq, dm_dsigma12);
 }
 
 // ------------------------------------------
@@ -497,23 +609,61 @@ fusedssim_backward(
     int H  = img1.size(2);
     int W  = img1.size(3);
 
-    auto dL_dimg1 = torch::zeros_like(img1);
+    const auto [nhwc, fmt] = layout_of(img1);
+    auto dL_dimg1   = torch::empty_like(img1, fmt);
 
     dim3 grid((W + BLOCK_X - 1) / BLOCK_X,
               (H + BLOCK_Y - 1) / BLOCK_Y,
               B);
     dim3 block(BLOCK_X, BLOCK_Y);
 
-    fusedssim_backwardCUDA<<<grid, block>>>(
+    fusedssim_backwardCUDA<<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
         H, W, CH, C1, C2,
-        img1.contiguous().data_ptr<float>(),
-        img2.contiguous().data_ptr<float>(),
-        dL_dmap.contiguous().data_ptr<float>(),
+        img1.contiguous(fmt).data_ptr<float>(),
+        img2.contiguous(fmt).data_ptr<float>(),
+        dL_dmap.contiguous(fmt).data_ptr<float>(),
         dL_dimg1.data_ptr<float>(),
-        dm_dmu1.contiguous().data_ptr<float>(),
-        dm_dsigma1_sq.contiguous().data_ptr<float>(),
-        dm_dsigma12.contiguous().data_ptr<float>()
+        dm_dmu1.contiguous(fmt).data_ptr<float>(),
+        dm_dsigma1_sq.contiguous(fmt).data_ptr<float>(),
+        dm_dsigma12.contiguous(fmt).data_ptr<float>(),
+        nhwc,
+        nullptr,
+        0.f,
+        0,
+        nullptr,
+        0.f
     );
 
+    return dL_dimg1;
+}
+
+// Backward of fusedssim_sum(...) / count: dL/dmap = *dL_dmean / count on the
+// valid region; dL_dmean is a device scalar (no host sync).
+torch::Tensor
+fusedssim_backward_mean(
+    float C1, float C2, torch::Tensor &img1, torch::Tensor &img2, torch::Tensor &dL_dmean, double count, int pad,
+    torch::Tensor &dm_dmu1, torch::Tensor &dm_dsigma1_sq, torch::Tensor &dm_dsigma12,
+    c10::optional<torch::Tensor> dL_dl1, double l1_count)
+{
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(img1));
+    int B  = img1.size(0);
+    int CH = img1.size(1);
+    int H  = img1.size(2);
+    int W  = img1.size(3);
+    const auto [nhwc, fmt] = layout_of(img1);
+    auto dL_dimg1   = torch::empty_like(img1, fmt);
+    auto g          = dL_dmean.contiguous();
+    torch::Tensor g1;
+    if (dL_dl1.has_value()) g1 = dL_dl1.value().contiguous();
+    dim3 grid((W + BLOCK_X - 1) / BLOCK_X, (H + BLOCK_Y - 1) / BLOCK_Y, B);
+    dim3 block(BLOCK_X, BLOCK_Y);
+    fusedssim_backwardCUDA<<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
+        H, W, CH, C1, C2,
+        img1.contiguous(fmt).data_ptr<float>(), img2.contiguous(fmt).data_ptr<float>(),
+        nullptr, dL_dimg1.data_ptr<float>(),
+        dm_dmu1.contiguous(fmt).data_ptr<float>(), dm_dsigma1_sq.contiguous(fmt).data_ptr<float>(),
+        dm_dsigma12.contiguous(fmt).data_ptr<float>(), nhwc,
+        g.data_ptr<float>(), static_cast<float>(count), pad,
+        g1.defined() ? g1.data_ptr<float>() : nullptr, static_cast<float>(l1_count));
     return dL_dimg1;
 }

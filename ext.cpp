@@ -11,8 +11,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("fusedssim", &fusedssim);
   m.def("fusedssim_backward", &fusedssim_backward);
 
-  // 3D SSIM (CUDA only for now)
 #ifdef FUSED_SSIM_CUDA
+  // 2D mean-only training path and fused L1 + SSIM (CUDA only)
+  m.def("fusedssim_sum", &fusedssim_sum);
+  m.def("fusedssim_backward_mean", &fusedssim_backward_mean);
+
+  // 3D SSIM (CUDA only for now)
   m.def("fusedssim3d", &fusedssim3d);
   m.def("fusedssim_backward3d", &fusedssim_backward3d);
 #endif
