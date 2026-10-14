@@ -58,7 +58,7 @@ def test_rejects_invalid_inputs_before_kernel_launch(monkeypatch):
     x, y = make()
     with pytest.raises(ValueError, match="CUDA"):
         fused_l1_ssim(x.cpu(), y.cpu())
-    with pytest.raises(ValueError, match="same CUDA/HIP device"):
+    with pytest.raises(ValueError, match="same CUDA device"):
         fused_l1_ssim(x, y.cpu())
     with pytest.raises(ValueError, match="float32"):
         fused_l1_ssim(x, y.half())

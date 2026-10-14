@@ -500,6 +500,12 @@ __global__ void fusedssim_backwardCUDA(
     }
 }
 
+// Channels-last inputs (e.g. permuted NHWC renders) are used in place; everything else as NCHW.
+static std::pair<bool, at::MemoryFormat> layout_of(const torch::Tensor &t) {
+    const bool nhwc = t.dim() == 4 && !t.is_contiguous() && t.is_contiguous(at::MemoryFormat::ChannelsLast);
+    return {nhwc, nhwc ? at::MemoryFormat::ChannelsLast : at::MemoryFormat::Contiguous};
+}
+
 // ------------------------------------------
 // PyTorch Interface (Forward)
 //   Returns (ssim_map, dm_dmu1, dm_dsigma1_sq, dm_dsigma12).
@@ -525,11 +531,8 @@ fusedssim(
               B);
     dim3 block(BLOCK_X, BLOCK_Y);
 
-    // Channels-last inputs (e.g. permuted NHWC renders) are used in place.
-    // Every in-bounds pixel of every output is written, so no zero-fill.
-    const bool nhwc = img1.dim() == 4 && !img1.is_contiguous()
-                      && img1.is_contiguous(at::MemoryFormat::ChannelsLast);
-    const auto fmt  = nhwc ? at::MemoryFormat::ChannelsLast : at::MemoryFormat::Contiguous;
+    // Every in-bounds pixel of every output is written, so no zero-fill (empty_like).
+    const auto [nhwc, fmt] = layout_of(img1);
     auto i1 = img1.contiguous(fmt);
     auto i2 = img2.contiguous(fmt);
     auto ssim_map = torch::empty_like(i1, fmt);
@@ -569,9 +572,7 @@ fusedssim_sum(float C1, float C2, torch::Tensor &img1, torch::Tensor &img2, int 
     int W  = img1.size(3);
     dim3 grid((W + BLOCK_X - 1) / BLOCK_X, (H + BLOCK_Y - 1) / BLOCK_Y, B);
     dim3 block(BLOCK_X, BLOCK_Y);
-    const bool nhwc = img1.dim() == 4 && !img1.is_contiguous()
-                      && img1.is_contiguous(at::MemoryFormat::ChannelsLast);
-    const auto fmt  = nhwc ? at::MemoryFormat::ChannelsLast : at::MemoryFormat::Contiguous;
+    const auto [nhwc, fmt] = layout_of(img1);
     auto i1 = img1.contiguous(fmt);
     auto i2 = img2.contiguous(fmt);
     auto block_sums    = torch::empty({with_l1 ? 2 : 1, (int64_t)grid.x * grid.y * grid.z}, img1.options());
@@ -608,9 +609,7 @@ fusedssim_backward(
     int H  = img1.size(2);
     int W  = img1.size(3);
 
-    const bool nhwc = img1.dim() == 4 && !img1.is_contiguous()
-                      && img1.is_contiguous(at::MemoryFormat::ChannelsLast);
-    const auto fmt  = nhwc ? at::MemoryFormat::ChannelsLast : at::MemoryFormat::Contiguous;
+    const auto [nhwc, fmt] = layout_of(img1);
     auto dL_dimg1   = torch::empty_like(img1, fmt);
 
     dim3 grid((W + BLOCK_X - 1) / BLOCK_X,
@@ -651,9 +650,7 @@ fusedssim_backward_mean(
     int CH = img1.size(1);
     int H  = img1.size(2);
     int W  = img1.size(3);
-    const bool nhwc = img1.dim() == 4 && !img1.is_contiguous()
-                      && img1.is_contiguous(at::MemoryFormat::ChannelsLast);
-    const auto fmt  = nhwc ? at::MemoryFormat::ChannelsLast : at::MemoryFormat::Contiguous;
+    const auto [nhwc, fmt] = layout_of(img1);
     auto dL_dimg1   = torch::empty_like(img1, fmt);
     auto g          = dL_dmean.contiguous();
     torch::Tensor g1;

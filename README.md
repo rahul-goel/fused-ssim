@@ -197,7 +197,7 @@ with torch.no_grad():
   ssim_value = fused_ssim(predicted_image, gt_image, train=False)
 ```
 
-For the common `L1 + SSIM` training loss on CUDA (and HIP, untested), `fused_l1_ssim` returns the mean L1 and the mean SSIM from one forward and one backward kernel. Only `predicted_image` is differentiable, and `gt_image` must be a float32 tensor on the same device without `requires_grad`:
+For the common `L1 + SSIM` training loss on CUDA, `fused_l1_ssim` returns the mean L1 and the mean SSIM from one forward and one backward kernel. Only `predicted_image` is differentiable, and `gt_image` must be a float32 tensor on the same device without `requires_grad`:
 ```python
 from fused_ssim import fused_l1_ssim
 l1, ssim_value = fused_l1_ssim(predicted_image, gt_image, padding="valid")

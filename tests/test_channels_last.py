@@ -72,3 +72,39 @@ def test_channels_last_view_of_nhwc_render():
     v2.backward()
     torch.testing.assert_close(v, v2, rtol=1e-6, atol=1e-8)
     torch.testing.assert_close(nhwc_x.grad.permute(0, 3, 1, 2), x2.grad, rtol=0, atol=0)
+
+
+def poison_allocator(*shapes, n=12):
+    """Leave n freed, NaN-filled blocks per shape in the caching allocator, so that an output
+    allocated with empty_like and not fully written shows NaN."""
+    blocks = [torch.full(shape, float("nan"), device="cuda") for shape in shapes for _ in range(n)]
+    del blocks
+    assert torch.isnan(torch.empty(shapes[0], device="cuda")).all()  # the allocator really hands them back
+
+
+@pytest.mark.parametrize("channels_last", [False, True])
+@pytest.mark.parametrize("shape", [(1, 3, 19, 27), (2, 3, 67, 93)])
+def test_outputs_are_fully_written_without_zero_fill(shape, channels_last):
+    """The kernels allocate with empty_like; every element of every output must be written."""
+    import fused_ssim_cuda as ext
+
+    x, y = make(shape, channels_last, channels_last)
+    C1, C2 = 0.01 ** 2, 0.03 ** 2
+    dmap = torch.rand_like(x)
+    one = torch.ones(1, device="cuda")
+    nblocks = shape[0] * -(-shape[2] // 16) * -(-shape[3] // 16)  # per-block partial sums: (2, nblocks)
+    results = {}
+    for poisoned in (False, True):
+        def call(f, *args):
+            if poisoned:
+                poison_allocator(shape, (2, nblocks))
+            return f(*args)
+
+        out = call(ext.fusedssim, C1, C2, x, y, True)
+        sums, *dm = call(ext.fusedssim_sum, C1, C2, x, y, 5, True)
+        grad = call(ext.fusedssim_backward, C1, C2, x, y, dmap, *out[1:])
+        gmean = call(ext.fusedssim_backward_mean, C1, C2, x, y, one, 100.0, 5, *dm, one, 100.0)
+        results[poisoned] = [*out, sums, *dm, grad, gmean]
+    for clean, poisoned in zip(results[False], results[True]):
+        assert torch.isfinite(poisoned).all()
+        assert torch.equal(clean, poisoned)
